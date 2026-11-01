@@ -42,6 +42,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true", help="输出机器可读的 JSON")
     args = parser.parse_args(argv)
 
+    # GBK 控制台打不出 ✓ ─ 这些符号，遇到就替换掉而不是崩掉
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, OSError):
+            pass
+
     try:
         cfg = _config_from_args(args)
         source = build_source(cfg)
