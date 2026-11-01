@@ -3,6 +3,8 @@
 贴在屏幕右边缘的待办面板。鼠标贴到主屏最右边，滑出你今天要做的事；鼠标离开自动收回。
 常驻托盘，永不抢焦点，可开机自启。
 
+[English](README.en.md)
+
 ![面板](docs/screenshot-panel.png)
 
 ## 它解决什么
@@ -16,6 +18,15 @@ PeekTodo 把它贴在屏幕边缘，抬一下鼠标就能看到。
 ## 快速开始
 
 ```bash
+git clone https://github.com/ConstVain/PeekTodo.git
+cd PeekTodo
+pip install .
+peektodo
+```
+
+也可以不安装，直接从源码跑：
+
+```bash
 pip install -r requirements.txt
 python -m peek_todo
 ```
@@ -27,11 +38,13 @@ python -m peek_todo
 之后：
 
 ```bash
-python -m peek_todo              # 正常使用（托盘常驻）
-python -m peek_todo --setup      # 重新设置
-python -m peek_todo --force-shown  # 强制展开，调样式用
-python -m peek_todo --doctor     # 命令行体检
+peektodo                    # 正常使用（托盘常驻）
+peektodo --setup            # 重新设置
+peektodo --force-shown      # 强制展开，调样式用
+peektodo --doctor           # 命令行体检
 ```
+
+装成包之后，配置放在 `%APPDATA%\PeekTodo\`；直接跑源码时配置就在仓库根目录（便携）。
 
 ## 三种模式
 
@@ -59,7 +72,7 @@ python -m peek_todo --doctor     # 命令行体检
 ```
 来源   docs/sample-plan.md
 根     周计划
-模式   A
+模式   周计划
 ──────────────────────────────────────────────
 ✓ 周一下午                  周一下午  ·  4 条（2 层）
 ✓ 周二上午                  周二上午  ·  2 条
@@ -67,25 +80,6 @@ python -m peek_todo --doctor     # 命令行体检
 ──────────────────────────────────────────────
 事项 8 条，其中已完成 1 条
 ```
-
-## 安装
-
-```bash
-git clone https://github.com/ConstVain/PeekTodo.git
-cd PeekTodo
-pip install -r requirements.txt
-python -m peek_todo
-```
-
-需要 Python 3.10+，仅支持 Windows。第一次运行会弹设置向导。
-
-想双击启动的话，建个快捷方式指向：
-
-```
-<你的Python目录>\pythonw.exe -m peek_todo
-```
-
-工作目录设成仓库根目录。开机自启在托盘菜单里勾，程序会自己写注册表。
 
 ## 目录
 
@@ -101,6 +95,7 @@ peek_todo/
 ├─ doctor.py        命令行体检
 ├─ autostart.py     开机自启（HKCU Run）
 ├─ app.py           入口：窗口、托盘、轮询
+├─ assets/          托盘图标与应用图标
 ├─ sources/
 │  ├─ markdown.py   标题 + 列表项
 │  └─ mubu.py       幕布本地备份

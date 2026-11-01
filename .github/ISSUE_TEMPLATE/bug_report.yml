@@ -1,0 +1,73 @@
+name: Bug report
+description: 面板显示不对、解析不出来、启动失败
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        先用 `peektodo --doctor` 跑一遍，把输出贴上来——大部分"没显示出来"的问题看这个就能定位。
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 发生了什么
+      description: 你期望看到什么，实际看到什么
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: --doctor 的输出
+      description: 命令行执行 `peektodo --doctor`（或 `python -m peek_todo --doctor`），把结果贴进来
+      render: text
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: 仓库的 commit 或 release 版本号
+    validations:
+      required: false
+
+  - type: dropdown
+    id: source
+    attributes:
+      label: 数据源
+      options:
+        - 本地 Markdown
+        - 幕布文档
+        - 其他
+    validations:
+      required: true
+
+  - type: dropdown
+    id: mode
+    attributes:
+      label: 模式
+      options:
+        - 周计划
+        - 截止日
+        - 备忘单
+        - 不确定
+    validations:
+      required: true
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows 版本
+      placeholder: Windows 11 23H2 / Windows 10 22H2 …
+    validations:
+      required: false
+
+  - type: textarea
+    id: structure
+    attributes:
+      label: 文档结构片段
+      description: 贴一小段脱敏后的结构（标题层级 + 几条事项），不用贴真实内容
+      render: markdown
+    validations:
+      required: false

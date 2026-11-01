@@ -1,0 +1,38 @@
+name: Feature request
+description: 想要新的数据源、新的显示方式或别的功能
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        PeekTodo 的目标是"贴在边缘、一眼看完"，所以会倾向于拒绝让面板变复杂的需求——
+        不过先说想法，不一定不行。
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你想解决什么
+      description: 描述场景，而不是直接说方案。"我每天要确认三件事，现在得切窗口"比"加个置顶按钮"更有用
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: 你想到的做法
+      description: 可选
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 属于哪一块
+      options:
+        - 数据源（想支持别的工具）
+        - 显示与布局
+        - 交互（鼠标、快捷键、托盘）
+        - 配置与安装
+        - 其他
+    validations:
+      required: true

@@ -1,0 +1,6 @@
+blank_issues_enabled: false
+
+contact_links:
+  - name: 先跑一下 --doctor
+    url: https://github.com/ConstVain/PeekTodo#为什么不用固定语法
+    about: 大部分"内容没显示出来"的问题，doctor 的输出就能说明是哪一步没接住
