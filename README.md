@@ -61,8 +61,9 @@ peektodo --no-detach        # 留在前台，方便看日志
 
 <table>
 <tr>
-<td width="50%"><b>截止日</b>：逾期标红，其余按日期排<br><img src="docs/screenshot-due.png"></td>
-<td width="50%"><b>备忘单</b>：一张常驻清单<br><img src="docs/screenshot-memo.png"></td>
+<td width="33%"><b>周计划</b>：上方当前时段，下方今天<br><img src="docs/screenshot-panel.png"></td>
+<td width="33%"><b>截止日</b>：逾期标红，其余按日期排<br><img src="docs/screenshot-due.png"></td>
+<td width="33%"><b>备忘单</b>：一张常驻清单<br><img src="docs/screenshot-memo.png"></td>
 </tr>
 </table>
 

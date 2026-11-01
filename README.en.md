@@ -58,6 +58,14 @@ No terminal needed: double-click `start.cmd`, which launches it via `pythonw` in
 
 The first two share the same shape (root → groups → items); only the **interpretation of the group title** differs — a time slot of the week, or a calendar date. Memo has no groups.
 
+<table>
+<tr>
+<td width="33%"><b>Week plan</b>: current slot on top, today below<br><img src="docs/screenshot-panel.png"></td>
+<td width="33%"><b>Deadline</b>: overdue in red, rest by date<br><img src="docs/screenshot-due.png"></td>
+<td width="33%"><b>Memo</b>: one standing list<br><img src="docs/screenshot-memo.png"></td>
+</tr>
+</table>
+
 Dates understood: `11月2日`, `11月3号`, `2026-11-02`, `11/2`, `今天`(today), `明天`(tomorrow), `后天`(day after).
 Time slots: `周一下午`, `星期二上午`, `礼拜三`, `周7 早上` — or add your own aliases under `vocabulary` in `config.json`.
 
