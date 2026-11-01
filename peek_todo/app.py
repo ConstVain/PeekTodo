@@ -61,8 +61,9 @@ def state_path() -> Path:
 def make_no_activate(panel: Panel) -> None:
     """WS_EX_NOACTIVATE + WS_EX_TOOLWINDOW：点得到，但永远不抢焦点、不进 Alt-Tab。"""
     try:
-        import win32con
-        import win32gui
+        from .win32 import import_gui
+
+        win32gui, win32con = import_gui()
     except ImportError:
         return
     try:
