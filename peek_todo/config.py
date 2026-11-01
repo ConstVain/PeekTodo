@@ -27,7 +27,7 @@ DEFAULT_PANEL = {
     "pollMs": 40,
 }
 
-DEFAULT_BEHAVIOR = {"refreshMs": 5000, "autostart": False}
+DEFAULT_BEHAVIOR = {"refreshMs": 5000, "autostart": False, "desktopShortcut": True}
 
 
 @dataclass

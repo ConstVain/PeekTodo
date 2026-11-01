@@ -248,6 +248,9 @@ class SettingsDialog(QDialog):
         row1.addStretch(1)
         self.autostart_check = QCheckBox("开机自启")
         row1.addWidget(self.autostart_check)
+        self.shortcut_check = QCheckBox("桌面快捷方式")
+        self.shortcut_check.setToolTip("在桌面放一个带图标的入口")
+        row1.addWidget(self.shortcut_check)
         section.body.addLayout(row1)
 
         note = QLabel("强调色选「跟随模式」时，周计划用蓝、截止日用琥珀、备忘单用绿")
@@ -430,9 +433,12 @@ class SettingsDialog(QDialog):
         accent = self.accent_combo.findData(panel.get("accent", "auto"))
         self.accent_combo.setCurrentIndex(max(0, accent))
 
-        from .. import autostart
+        from .. import autostart, shortcut
 
         self.autostart_check.setChecked(bool(behavior.get("autostart")) or autostart.is_enabled())
+        self.shortcut_check.setChecked(
+            bool(behavior.get("desktopShortcut", True)) or shortcut.desktop_path().exists()
+        )
 
     def _save(self):
         if not self._source:
@@ -457,8 +463,12 @@ class SettingsDialog(QDialog):
             "vocabulary": {"weekdays": {}, "periods": {}},
             "periods": DEFAULT_PERIODS,
             "panel": {**DEFAULT_PANEL, "accent": accent},
-            "behavior": {**DEFAULT_BEHAVIOR, "refreshMs": refresh_ms,
-                         "autostart": self.autostart_check.isChecked()},
+            "behavior": {
+                **DEFAULT_BEHAVIOR,
+                "refreshMs": refresh_ms,
+                "autostart": self.autostart_check.isChecked(),
+                "desktopShortcut": self.shortcut_check.isChecked(),
+            },
         }
         self.accept()
 

@@ -13,7 +13,7 @@ from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QCursor, QIcon
 from PyQt5.QtWidgets import QAction, QApplication, QMenu, QMessageBox, QSystemTrayIcon
 
-from . import autostart
+from . import autostart, shortcut
 from .config import Config, build_mapping, build_source
 from .doctor import main as doctor_main
 from .edge import EdgeDetector, Rect
@@ -327,6 +327,8 @@ def ensure_config(force: bool = False) -> Config | None:
         json.dumps(dialog.result_config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     autostart.toggle(bool(dialog.result_config["behavior"].get("autostart")))
+    if dialog.result_config["behavior"].get("desktopShortcut", True):
+        shortcut.create()
     return Config.load(path)
 
 
