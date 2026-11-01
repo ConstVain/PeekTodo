@@ -30,7 +30,7 @@
     "pollMs": 40
   },
   "behavior": {
-    "refreshMs": 30000,
+    "refreshMs": 5000,
     "autostart": false
   }
 }

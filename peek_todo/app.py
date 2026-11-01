@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
 
-from PyQt5.QtCore import QSharedMemory, Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QCursor, QIcon
 from PyQt5.QtWidgets import QAction, QApplication, QMenu, QMessageBox, QSystemTrayIcon
 
@@ -18,12 +17,13 @@ from . import autostart
 from .config import Config, build_mapping, build_source
 from .doctor import main as doctor_main
 from .edge import EdgeDetector, Rect
-from .selection import build_view
+from .selection import ACCENT_PRESETS, build_view
 from .sources.base import SourceError
+from .opener import open_source as open_source_item
 from .state import LocalState
 from .structure import map_document
 from .ui.panel import Panel
-from .ui.wizard import SetupWizard
+from .ui.settings import SettingsDialog
 
 
 def assets_dir() -> Path:
@@ -108,6 +108,7 @@ class Runner:
         self.panel.height_changed.connect(self._on_height_changed)
 
         self._last_ok = None
+        self._render_sig: tuple | None = None
         self.rebuild()
         self.refresh()
 
@@ -153,6 +154,31 @@ class Runner:
             self._render_failure(str(exc))
             return
 
+        # 设置里选了固定强调色就覆盖模式色
+        preset = ACCENT_PRESETS.get(self.cfg.panel.get("accent", "auto"))
+        if preset:
+            view.accent = preset
+
+        # 内容没变就不重建控件——5 秒一次轮询时才不会闪
+        signature = self._signature(view)
+        changed = signature != self._render_sig
+        self._render_sig = signature
+
+        if os.environ.get("PEEK_DEBUG"):
+            import tempfile
+
+            try:
+                with open(
+                    Path(tempfile.gettempdir()) / "peektodo-debug.log", "a", encoding="utf-8"
+                ) as fh:
+                    fh.write(
+                        f"{datetime.now():%H:%M:%S} refresh tasks={view.total} "
+                        f"open={view.open_count} current={len(view.current)} "
+                        f"render={'yes' if changed else 'no'}\n"
+                    )
+            except OSError:
+                pass
+
         stamp = fetch.fetched_at.strftime("%H:%M")
         level = "warn" if (fetch.warnings or view.unknown) else "ok"
         status = f"{fetch.source_name} · {stamp}"
@@ -166,8 +192,26 @@ class Runner:
             "status": status,
             "detail": "\n".join(fetch.warnings + view.issues),
         }
-        self.panel.render(view, meta)
         self._last_ok = (view, meta)
+        if changed:
+            self.panel.render(view, meta)
+
+    @staticmethod
+    def _signature(view) -> tuple:
+        """决定"要不要重画"的摘要：文字、勾选、分组、统计都算进去。"""
+        return (
+            view.headline,
+            view.mode,
+            view.open_count,
+            view.done_count,
+            view.note,
+            tuple((t.id, t.text, t.done, t.depth) for t in view.current),
+            tuple((t.id, t.text) for t in view.unknown),
+            tuple(
+                (g.label, tuple((t.id, t.text, t.done, t.depth) for t in g.tasks))
+                for g in view.today_groups
+            ),
+        )
 
     def _render_failure(self, message: str) -> None:
         if self._last_ok:
@@ -194,16 +238,7 @@ class Runner:
         self.refresh()
 
     def open_source(self) -> None:
-        source = self.cfg.source
-        if source.get("type") == "markdown":
-            path = self.cfg.source_path()
-            if path and path.exists():
-                os.startfile(str(path))  # noqa: S606 - 用户自己的文件
-        elif source.get("type") == "mubu":
-            exe = source.get("mubuExe")
-            doc_id = source.get("docId", "")
-            if exe and Path(exe).exists():
-                subprocess.Popen([exe, f"shortcut-{doc_id}"], close_fds=True)
+        open_source_item(self.cfg.source)
 
     def tick(self) -> None:
         if self.forced:
@@ -229,7 +264,7 @@ class Runner:
         act_refresh = QAction("立即刷新", menu)
         act_refresh.triggered.connect(self.refresh)
 
-        act_setup = QAction("重新设置…", menu)
+        act_setup = QAction("设置…", menu)
         act_setup.triggered.connect(self.rerun_wizard)
 
         act_auto = QAction("开机自启", menu)
@@ -258,13 +293,15 @@ class Runner:
         autostart.toggle(enabled)
 
     def rerun_wizard(self) -> None:
-        wizard = SetupWizard()
-        if wizard.exec_() != SetupWizard.Accepted or not wizard.result_config:
+        dialog = SettingsDialog()
+        dialog.prefill(self.cfg.raw)
+        if dialog.exec_() != SettingsDialog.Accepted or not dialog.result_config:
             return
         config_path().write_text(
-            json.dumps(wizard.result_config, ensure_ascii=False, indent=2) + "\n",
+            json.dumps(dialog.result_config, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
+        autostart.toggle(bool(dialog.result_config["behavior"].get("autostart")))
         self.cfg = Config.load(config_path())
         self.rebuild()
         self.refresh()
@@ -277,17 +314,29 @@ def ensure_config(force: bool = False) -> Config | None:
             return Config.load(path)
         except (OSError, ValueError):
             pass
-    wizard = SetupWizard()
-    if wizard.exec_() != SetupWizard.Accepted or not wizard.result_config:
+    dialog = SettingsDialog()
+    if path.exists():
+        try:
+            dialog.prefill(json.loads(path.read_text(encoding="utf-8-sig")))
+        except (OSError, ValueError):
+            pass
+    if dialog.exec_() != SettingsDialog.Accepted or not dialog.result_config:
         return None
     path.write_text(
-        json.dumps(wizard.result_config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        json.dumps(dialog.result_config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
+    autostart.toggle(bool(dialog.result_config["behavior"].get("autostart")))
     return Config.load(path)
 
 
 def _lock_path() -> Path:
-    """锁文件优先放临时目录；拿不到（权限/环境异常）就退回程序目录。"""
+    """锁文件优先放临时目录；拿不到（权限/环境异常）就退回程序目录。
+
+    PEEK_LOCK_PATH 可覆盖，用于调试时开第二个实例。
+    """
+    override = os.environ.get("PEEK_LOCK_PATH")
+    if override:
+        return Path(override)
     try:
         import tempfile
 
@@ -300,17 +349,36 @@ def single_instance_lock():
     """用文件锁做单实例：进程退出（哪怕崩溃）时由系统自动释放。
 
     这里任何失败都只降级为"不做单实例"，绝不能让启动直接崩掉。
+    PID 写在文件开头；锁打在第 4096 字节上——LockFile 会连读一起挡住，
+    两者错开，别的实例才读得到 PID。
     """
     try:
         import msvcrt
 
         handle = open(_lock_path(), "a+")
+        try:
+            handle.seek(0)
+            handle.truncate()
+            handle.write(str(os.getpid()))
+            handle.flush()
+        except OSError:
+            pass
+        handle.seek(4096)
         msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
         return handle
     except OSError:
         return None
     except Exception:  # noqa: BLE001
         return True  # 加锁本身出错：放行，别挡住启动
+
+
+def running_instance_pid() -> int | None:
+    """读锁文件里记录的 PID，用来提示用户是哪个进程占着。"""
+    try:
+        text = _lock_path().read_text(encoding="ascii", errors="ignore").strip()
+        return int(text) if text.isdigit() else None
+    except OSError:
+        return None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -327,14 +395,18 @@ def main(argv: list[str] | None = None) -> int:
     app.setQuitOnLastWindowClosed(False)
     app.setApplicationName("PeekTodo")
 
-    lock = single_instance_lock()
-    if lock is None:
+    lock = None if "--force" in argv else single_instance_lock()
+    if lock is None and "--force" not in argv:
         # 已经在跑了。开机自启带 --silent，静默退出；手动双击则明确告诉用户
         if "--silent" not in argv:
+            pid = running_instance_pid()
+            who = f"（进程 PID {pid}）" if pid else ""
             QMessageBox.information(
                 None,
                 "PeekTodo 已在运行",
-                "面板已经在跑了，把鼠标贴到屏幕最右边即可打开。\n\n"
+                f"面板已经在跑了{who}，把鼠标贴到屏幕最右边即可打开。\n\n"
+                "如果它卡住了、看不到面板：在任务管理器里结束这个进程，"
+                "或者用 peektodo --force 强制再开一个。\n\n"
                 "（托盘图标在右下角，右键可以退出或重新设置）",
             )
         return 0

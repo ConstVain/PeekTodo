@@ -25,3 +25,4 @@ tools/preview_panel.py
 pip-build-*/
 pip-install-*/
 pip-ephem-wheel-cache-*/
+*.err
