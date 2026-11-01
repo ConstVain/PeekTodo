@@ -68,14 +68,33 @@ python -m peek_todo --doctor     # 命令行体检
 事项 8 条，其中已完成 1 条
 ```
 
+## 安装
+
+```bash
+git clone https://github.com/ConstVain/PeekTodo.git
+cd PeekTodo
+pip install -r requirements.txt
+python -m peek_todo
+```
+
+需要 Python 3.10+，仅支持 Windows。第一次运行会弹设置向导。
+
+想双击启动的话，建个快捷方式指向：
+
+```
+<你的Python目录>\pythonw.exe -m peek_todo
+```
+
+工作目录设成仓库根目录。开机自启在托盘菜单里勾，程序会自己写注册表。
+
 ## 目录
 
 ```
 peek_todo/
 ├─ model.py         Node / Task / Group
-├─ vocabulary.py    时间词识别（词表可配）
-├─ structure.py     根节点 + 模式 A/B
-├─ selection.py     今天/当前时段切片
+├─ vocabulary.py    时段与日期识别（词表可配）
+├─ structure.py     根节点 + 三种模式
+├─ selection.py     按当前时间切片
 ├─ state.py         本地勾选（不碰源文件）
 ├─ edge.py          贴边判定
 ├─ report.py        识别报告
@@ -103,4 +122,7 @@ verify.cmd            # 测试 + 两个数据源的体检
 - **不联网**：没有任何网络请求。
 - **幕布源**读取桌面端本地缓存，属于非公开格式，客户端升级可能失效；失效时保留上次数据并提示。
 - 仅支持 Windows 10/11（依赖 Win32 的 `WS_EX_NOACTIVATE` 与光标轮询）。
-- 许可证：GPL-3.0（依赖 PyQt5）。
+
+## 许可证
+
+GPL-3.0，见 [LICENSE](LICENSE)。因为依赖 PyQt5（GPL/商业双许可），整个项目按 GPL 发布。

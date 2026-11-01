@@ -12,7 +12,7 @@ from pathlib import Path
 
 from PyQt5.QtCore import QSharedMemory, Qt, QTimer
 from PyQt5.QtGui import QCursor, QIcon
-from PyQt5.QtWidgets import QAction, QApplication, QMenu, QSystemTrayIcon
+from PyQt5.QtWidgets import QAction, QApplication, QMenu, QMessageBox, QSystemTrayIcon
 
 from . import autostart
 from .config import Config, build_mapping, build_source
@@ -268,27 +268,39 @@ def ensure_config(force: bool = False) -> Config | None:
     return Config.load(path)
 
 
+def _lock_path() -> Path:
+    """锁文件优先放临时目录；拿不到（权限/环境异常）就退回程序目录。"""
+    try:
+        import tempfile
+
+        return Path(tempfile.gettempdir()) / "peektodo.lock"
+    except Exception:  # noqa: BLE001 - 任何异常都不该让程序起不来
+        return app_dir() / "peektodo.lock"
+
+
 def single_instance_lock():
     """用文件锁做单实例：进程退出（哪怕崩溃）时由系统自动释放。
 
-    不用 QSharedMemory——它会在进程异常残留时把后续启动全挡掉。
+    这里任何失败都只降级为"不做单实例"，绝不能让启动直接崩掉。
     """
-    import msvcrt
-
-    path = app_dir() / ".lock"
     try:
-        handle = open(path, "a+")
+        import msvcrt
+
+        handle = open(_lock_path(), "a+")
         msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
         return handle
     except OSError:
         return None
+    except Exception:  # noqa: BLE001
+        return True  # 加锁本身出错：放行，别挡住启动
 
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
 
     if "--doctor" in argv:
-        return doctor_main([])
+        # 把其余参数透传给 doctor，例如 --doctor --config config.example.json
+        return doctor_main([arg for arg in argv if arg != "--doctor"])
 
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
@@ -299,6 +311,14 @@ def main(argv: list[str] | None = None) -> int:
 
     lock = single_instance_lock()
     if lock is None:
+        # 已经在跑了。开机自启带 --silent，静默退出；手动双击则明确告诉用户
+        if "--silent" not in argv:
+            QMessageBox.information(
+                None,
+                "PeekTodo 已在运行",
+                "面板已经在跑了，把鼠标贴到屏幕最右边即可打开。\n\n"
+                "（托盘图标在右下角，右键可以退出或重新设置）",
+            )
         return 0
 
     cfg = ensure_config(force="--setup" in argv)

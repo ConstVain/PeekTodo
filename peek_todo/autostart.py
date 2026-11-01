@@ -18,8 +18,8 @@ def _pythonw() -> Path:
 def launch_command() -> str:
     """打包成 exe 后直接指向 exe；源码运行时用 pythonw -m peek_todo。"""
     if getattr(sys, "frozen", False):
-        return f'"{sys.executable}"'
-    return f'"{_pythonw()}" -m peek_todo'
+        return f'"{sys.executable}" --silent'
+    return f'"{_pythonw()}" -m peek_todo --silent'
 
 
 def is_enabled() -> bool:
