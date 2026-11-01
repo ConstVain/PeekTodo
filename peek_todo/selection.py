@@ -34,10 +34,27 @@ class View:
     unknown_label: str = "未识别时间"
     section_label: str = "今天全部"
     show_bottom: bool = True  # 备忘单模式没有"下方列表"
+    accent: str = "#7aa2ff"  # 强调色，由模式决定
+    overdue_ids: set[str] = field(default_factory=set)  # 逾期事项的 id，用于标红
 
     @property
     def total(self) -> int:
         return self.open_count + self.done_count
+
+
+# 三种模式各自的强调色，UI 和报告都从这里取
+MODE_ACCENTS = {
+    "week": "#7aa2ff",  # 蓝
+    "due": "#f0b45f",  # 琥珀
+    "memo": "#4ade80",  # 绿
+}
+
+# 用户在设置里可以覆盖成固定色（"auto" = 跟随模式）
+ACCENT_PRESETS = {
+    "blue": "#7aa2ff",
+    "violet": "#a78bfa",
+    "teal": "#2dd4bf",
+}
 
 
 def _minutes(hhmm: str) -> int:
@@ -84,6 +101,7 @@ def build_view(
         now=now,
         mode=result.mode_used,
         issues=[i.message + (f"：{i.label}" if i.label else "") for i in result.issues],
+        accent=MODE_ACCENTS.get(result.mode_used, MODE_ACCENTS["week"]),
     )
 
     all_tasks = [t for g in result.groups for t in g.tasks] + list(result.orphans)
@@ -156,6 +174,9 @@ def _build_due_view(view: View, result: MappingResult, now: datetime) -> None:
 
     if overdue:
         view.note = f"{len(overdue)} 条逾期"
+
+    # 逾期事项单独标出来，面板上要变红
+    view.overdue_ids = {t.id for t in overdue if not t.done}
 
     counted = [t for g in result.groups for t in g.tasks] + list(result.orphans)
     view.open_count, view.done_count = _count(counted)

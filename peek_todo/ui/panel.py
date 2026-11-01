@@ -24,6 +24,23 @@ from ..selection import View
 ACCENT = "#7aa2ff"
 DIM = "#9aa1ad"
 FAINT = "#6b7280"
+OVERDUE = "#f87171"
+
+# 当前时段的外框：左侧一道色条 + 深一档的底色，把"现在要做"和其它区域分开
+CURRENT_BLOCK_QSS = """
+#currentBlock {
+    background: rgba(255, 255, 255, 0.035);
+    border-left: 3px solid %s;
+    border-radius: 9px;
+}
+"""
+
+GROUP_HEAD_QSS = """
+QWidget#groupHead {
+    background: transparent;
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+"""
 
 CARD_QSS = """
 #card {
@@ -55,7 +72,16 @@ class TaskRow(QWidget):
     toggled = pyqtSignal(str)
     opened = pyqtSignal(str)
 
-    def __init__(self, task: Task, *, small: bool = False, muted: bool = False, parent=None):
+    def __init__(
+        self,
+        task: Task,
+        *,
+        small: bool = False,
+        muted: bool = False,
+        accent: str = ACCENT,
+        overdue: bool = False,
+        parent=None,
+    ):
         super().__init__(parent)
         self.task = task
         self._hover = False
@@ -81,11 +107,20 @@ class TaskRow(QWidget):
         else:
             size = 16 if task.depth == 0 else 11 if task.depth == 1 else 9
 
+        if task.done:
+            box_color = "#565d69"
+        elif overdue:
+            box_color = OVERDUE
+        elif small or muted or task.depth > 0:
+            box_color = FAINT
+        else:
+            box_color = accent
+
         box = QLabel(mark)
         box.setFixedWidth(12 if small else 16)
         box.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
         box.setStyleSheet(
-            f"color: {'#565d69' if task.done else (FAINT if (small or muted or task.depth > 0) else ACCENT)};"
+            f"color: {box_color};"
             f"font-size: {max(9, size - 2)}px; background: transparent;"
         )
 
@@ -95,6 +130,8 @@ class TaskRow(QWidget):
         text.setFont(_font(size, strike=task.done))
         if task.done:
             color = "#565d69"
+        elif overdue:
+            color = OVERDUE
         elif muted:
             color = DIM
         elif task.depth == 0:
@@ -205,10 +242,13 @@ class Panel(QWidget):
         head.addWidget(self.clock)
         root.addLayout(head)
 
-        self.current_box = QVBoxLayout()
-        self.current_box.setContentsMargins(0, 0, 0, 10)
+        self.current_block = QFrame()
+        self.current_block.setObjectName("currentBlock")
+        self.current_block.setStyleSheet(CURRENT_BLOCK_QSS % ACCENT)
+        self.current_box = QVBoxLayout(self.current_block)
+        self.current_box.setContentsMargins(10, 9, 10, 9)
         self.current_box.setSpacing(7)
-        root.addLayout(self.current_box)
+        root.addWidget(self.current_block)
 
         self.unknown_label = QLabel("未识别时间")
         self.unknown_label.setStyleSheet(
@@ -291,8 +331,8 @@ class Panel(QWidget):
             if widget is not None:
                 widget.deleteLater()
 
-    def _row(self, task: Task, *, small=False, muted=False):
-        row = TaskRow(task, small=small, muted=muted)
+    def _row(self, task: Task, *, small=False, muted=False, accent=ACCENT, overdue=False):
+        row = TaskRow(task, small=small, muted=muted, accent=accent, overdue=overdue)
         row.toggled.connect(self.task_toggled.emit)
         row.opened.connect(lambda _tid: self.open_source_requested.emit())
         return row
@@ -303,35 +343,76 @@ class Panel(QWidget):
         label.setStyleSheet(f"color:{FAINT}; font-size:12px; background:transparent;")
         return label
 
+    def _group_header(self, label: str, accent: str, *, first: bool):
+        """分组标题：一个带底色的小色块 + 上方的细分隔线。"""
+        host = QWidget()
+        host.setObjectName("groupHead")
+        host.setAttribute(Qt.WA_StyledBackground, True)
+        host.setStyleSheet(GROUP_HEAD_QSS if not first else "QWidget#groupHead{background: transparent;}")
+        row = QHBoxLayout(host)
+        row.setContentsMargins(0, 9 if not first else 3, 0, 5)
+        row.setSpacing(6)
+
+        chip = QLabel(label)
+        chip.setStyleSheet(
+            f"color:{accent}; font-size:10px; letter-spacing:0.4px;"
+            f"background: rgba(255,255,255,0.055); border-radius:4px;"
+            f"padding:2px 7px;"
+        )
+        row.addWidget(chip)
+        row.addStretch(1)
+        return host
+
     def render(self, view: View, meta: dict):
+        accent = view.accent
         self.headline.setText(view.headline)
+        self.headline.setStyleSheet(
+            f"color:#eef0f4; font-size:18px; font-weight:600; background:transparent;"
+        )
         self.meta.setText(f"{view.weekday} · {view.now.month}月{view.now.day}日")
+        self.current_block.setStyleSheet(CURRENT_BLOCK_QSS % accent)
+        self.section_label.setStyleSheet(
+            f"color:{accent}; font-size:10px; letter-spacing:1px; background:transparent;"
+        )
 
         self._clear(self.current_box)
         if view.current:
             for task in view.current:
-                self.current_box.addWidget(self._row(task))
-        elif view.mode == "A":
+                self.current_box.addWidget(
+                    self._row(
+                        task,
+                        accent=accent,
+                        overdue=task.id in view.overdue_ids,
+                    )
+                )
+        elif view.mode == "memo":
+            self.current_box.addWidget(self._hint("还没有任何事项"))
+        else:
             self.current_box.addWidget(self._hint("这个时间段没有安排"))
 
         self._clear(self.unknown_box)
         self.unknown_label.setText(view.unknown_label)
         self.unknown_label.setVisible(bool(view.unknown))
         for task in view.unknown:
-            self.unknown_box.addWidget(self._row(task, small=True, muted=True))
+            self.unknown_box.addWidget(self._row(task, small=True, muted=True, accent=accent))
 
         self._clear(self.all_box)
         if view.today_groups:
+            shown = 0
             for group in view.today_groups:
                 if not group.tasks:
                     continue
-                label = QLabel(group.label)
-                label.setStyleSheet(
-                    f"color:{FAINT}; font-size:10px; margin-top:6px; background:transparent;"
-                )
-                self.all_box.addWidget(label)
+                self.all_box.addWidget(self._group_header(group.label, accent, first=shown == 0))
+                shown += 1
                 for task in group.tasks:
-                    self.all_box.addWidget(self._row(task, small=True))
+                    self.all_box.addWidget(
+                        self._row(
+                            task,
+                            small=True,
+                            accent=accent,
+                            overdue=task.id in view.overdue_ids,
+                        )
+                    )
         elif view.current:
             self.all_box.addWidget(self._hint("上面已经列全了"))
         else:
