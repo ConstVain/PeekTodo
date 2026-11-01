@@ -1,0 +1,7 @@
+﻿# 运行
+PyQt5>=5.15
+pywin32>=306
+
+# 开发 / 打包
+pytest>=7
+pyinstaller>=6

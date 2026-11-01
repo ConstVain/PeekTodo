@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "source": {
+    "type": "markdown",
+    "path": "docs/sample-plan.md",
+    "recursive": true
+  },
+  "mapping": {
+    "root_path": ["周计划"],
+    "mode": "A",
+    "aliases": {}
+  },
+  "vocabulary": {
+    "weekdays": {},
+    "periods": {}
+  },
+  "periods": [
+    { "name": "上午", "start": "06:00" },
+    { "name": "下午", "start": "12:00" },
+    { "name": "晚上", "start": "18:00" }
+  ],
+  "panel": {
+    "width": 360,
+    "heightRatio": 0.62,
+    "maxHeight": 720,
+    "hotZone": 3,
+    "hotZonePad": 0,
+    "hideDelayMs": 120,
+    "animateMs": 90,
+    "pollMs": 40
+  },
+  "behavior": {
+    "refreshMs": 30000,
+    "autostart": false
+  }
+}

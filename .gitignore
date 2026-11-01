@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# 打包产物
+build/
+dist/
+*.spec
+*.zip
+
+# 用户自己的配置与状态（不入库）
+config.json
+.state.json
+click.log
+.tmp/
+
+# 编辑器
+.vscode/
+.idea/
