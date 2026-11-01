@@ -26,10 +26,28 @@ from .ui.panel import Panel
 from .ui.wizard import SetupWizard
 
 
+def assets_dir() -> Path:
+    """图标等静态资源：跟着包走，安装后也能找到。"""
+    return Path(__file__).resolve().parent / "assets"
+
+
 def app_dir() -> Path:
+    """配置和状态放哪。
+
+    - 打包后：exe 所在目录（便携）
+    - 源码运行：仓库根目录（能改配置、能调试）
+    - pip 安装后：%APPDATA%\\PeekTodo（包目录通常无写权限）
+    """
     if getattr(sys, "frozen", False):
         return Path(sys.executable).parent
-    return Path(__file__).resolve().parent.parent
+
+    package_root = Path(__file__).resolve().parent.parent
+    if (package_root / "pyproject.toml").exists() or (package_root / ".git").exists():
+        return package_root
+
+    target = Path(os.environ.get("APPDATA", Path.home())) / "PeekTodo"
+    target.mkdir(parents=True, exist_ok=True)
+    return target
 
 
 def config_path() -> Path:
@@ -202,7 +220,7 @@ class Runner:
     # ---------- 托盘 ----------
 
     def make_tray(self) -> None:
-        icon_path = app_dir() / "assets" / "tray.png"
+        icon_path = assets_dir() / "tray.png"
         icon = QIcon(str(icon_path)) if icon_path.exists() else QIcon()
         self.tray = QSystemTrayIcon(icon, self.app)
         self.tray.setToolTip("PeekTodo · 贴右边缘滑出")
