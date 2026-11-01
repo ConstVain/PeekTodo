@@ -34,16 +34,19 @@ Requires Python 3.10+ and Windows 10/11. The first launch opens the settings pan
 
 ![settings](docs/screenshot-settings.png)
 
-Afterwards:
+Afterwards (when launched from a terminal it moves itself to the background, so closing the terminal does not kill it):
 
 ```bash
 peektodo                 # normal use (tray resident)
 peektodo --setup         # reconfigure
 peektodo --force-shown   # keep the panel open, for tweaking styles
-peektodo --doctor        # print what the parser understood
+peektodo --doctor        # print what the parser understood (stays in the foreground)
+peektodo --no-detach     # stay in the foreground for logs
 ```
 
 Installed as a package, config lives in `%APPDATA%\PeekTodo\`. Running from source keeps it in the repo root (portable).
+
+No terminal needed: double-click `start.cmd`, which launches it via `pythonw` in the background.
 
 ## Three modes
 

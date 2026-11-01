@@ -381,12 +381,69 @@ def running_instance_pid() -> int | None:
         return None
 
 
+def _acquire_lock(retry: bool):
+    """后台自启的子进程可能比父进程晚一步退出，抢锁要等一下。"""
+    lock = single_instance_lock()
+    if lock is None and retry:
+        import time
+
+        for _ in range(10):
+            time.sleep(0.2)
+            lock = single_instance_lock()
+            if lock is not None:
+                break
+    return lock
+
+
+def _detach_to_background(argv: list[str]) -> bool:
+    """从终端启动时，改为无控制台的后台进程，然后让终端立刻返回。
+
+    这样关掉命令行窗口不会顺带把面板杀掉。带 --doctor/--setup 的不转，
+    因为这些要在当前终端里看输出。
+    """
+    if getattr(sys, "frozen", False) or sys.platform != "win32":
+        return False
+    if "--no-detach" in argv or "--doctor" in argv or "--setup" in argv:
+        return False
+    forced = "--detach" in argv
+    if not forced and not (
+        sys.stdout is not None and getattr(sys.stdout, "isatty", lambda: False)()
+    ):
+        return False
+
+    pythonw = Path(sys.executable).with_name("pythonw.exe")
+    if not pythonw.exists():
+        return False
+
+    import subprocess
+
+    flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(
+        subprocess, "CREATE_NEW_PROCESS_GROUP", 0
+    )
+    try:
+        subprocess.Popen(
+            [str(pythonw), "-m", "peek_todo", "--silent", "--detached-child"]
+            + [a for a in argv if a not in ("--silent", "--detach")],
+            creationflags=flags,
+            close_fds=True,
+        )
+    except OSError:
+        return False
+
+    print("PeekTodo 已在后台启动（关掉这个窗口不影响它）。")
+    print("托盘图标在右下角；要停掉它，右键托盘图标选「退出」。")
+    return True
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
 
     if "--doctor" in argv:
         # 把其余参数透传给 doctor，例如 --doctor --config config.example.json
         return doctor_main([arg for arg in argv if arg != "--doctor"])
+
+    if _detach_to_background(argv):
+        return 0
 
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
@@ -395,7 +452,7 @@ def main(argv: list[str] | None = None) -> int:
     app.setQuitOnLastWindowClosed(False)
     app.setApplicationName("PeekTodo")
 
-    lock = None if "--force" in argv else single_instance_lock()
+    lock = None if "--force" in argv else _acquire_lock("--detached-child" in argv)
     if lock is None and "--force" not in argv:
         # 已经在跑了。开机自启带 --silent，静默退出；手动双击则明确告诉用户
         if "--silent" not in argv:

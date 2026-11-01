@@ -35,16 +35,19 @@ python -m peek_todo
 
 ![设置](docs/screenshot-settings.png)
 
-之后：
+之后（在终端里运行时，PeekTodo 会自己转成后台进程，关掉终端不影响）：
 
 ```bash
 peektodo                    # 正常使用（托盘常驻）
 peektodo --setup            # 打开设置面板
 peektodo --force-shown      # 强制展开，调样式用
-peektodo --doctor           # 命令行体检
+peektodo --doctor           # 命令行体检（不转后台，直接看输出）
+peektodo --no-detach        # 留在前台，方便看日志
 ```
 
 装成包之后，配置放在 `%APPDATA%\PeekTodo\`；直接跑源码时配置就在仓库根目录（便携）。
+
+不想开终端就双击仓库里的 `start.cmd`，它会用 `pythonw` 在后台启动。
 
 ## 三种模式
 
