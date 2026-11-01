@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 
 
 @dataclass
@@ -53,6 +54,8 @@ class Group:
     label: str
     when: When | None
     tasks: list[Task] = field(default_factory=list)
+    # 截止日模式用：这一组对应的日期
+    due: date | None = None
 
 
 @dataclass

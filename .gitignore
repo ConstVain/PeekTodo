@@ -19,3 +19,10 @@ click.log
 # Г╪√Х╬▒Е≥╗
 .vscode/
 .idea/
+
+# ткппхуж╬сКаый╠нд╪Ч
+*.log
+preview_*.py
+
+.lock
+

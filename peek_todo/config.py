@@ -42,7 +42,8 @@ class Config:
         p = Path(path).expanduser()
         if not p.exists():
             raise FileNotFoundError(f"配置文件不存在：{p}")
-        return cls(path=p, raw=json.loads(p.read_text(encoding="utf-8")))
+        # utf-8-sig：记事本另存会带 BOM，不能让它把配置读废
+        return cls(path=p, raw=json.loads(p.read_text(encoding="utf-8-sig")))
 
     def save(self) -> None:
         self.path.write_text(

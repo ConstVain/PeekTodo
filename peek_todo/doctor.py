@@ -24,7 +24,7 @@ def _config_from_args(args) -> Config:
             "source": {"type": args.source, "path": args.path, "docId": args.doc_id},
             "mapping": {
                 "root_path": args.root.split(">") if args.root else None,
-                "mode": args.mode or "A",
+                "mode": args.mode or "week",
             },
         }
         return Config(path=Path("config.json").resolve(), raw=raw)
@@ -38,7 +38,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--path", help="markdown 文件或文件夹")
     parser.add_argument("--doc-id", dest="doc_id", help="幕布文档 id")
     parser.add_argument("--root", help="根节点标题路径，多级用 > 分隔")
-    parser.add_argument("--mode", choices=["A", "B", "a", "b"], help="结构模式")
+    parser.add_argument("--mode", choices=["week", "due", "A", "B", "a", "b"], help="结构模式：week=周计划，due=截止日")
     parser.add_argument("--json", action="store_true", help="输出机器可读的 JSON")
     args = parser.parse_args(argv)
 

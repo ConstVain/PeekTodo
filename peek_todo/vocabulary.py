@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import re
+from datetime import date, timedelta
 from dataclasses import dataclass, field
 
 from .model import When
@@ -123,3 +124,56 @@ def describe_when(when: When | None) -> str:
     if when.period is not None:
         parts.append(when.period)
     return "".join(parts) if parts else "未识别"
+
+
+# ---------- 截止日模式：把「11月2日」「明天」这类标题解析成日期 ----------
+
+_DATE_PATTERNS = [
+    re.compile(r"(\d{4})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})"),
+    re.compile(r"(\d{1,2})\s*月\s*(\d{1,2})\s*[日号]"),
+    re.compile(r"^(\d{1,2})\s*[/.]\s*(\d{1,2})$"),
+]
+
+_RELATIVE = {"今天": 0, "今日": 0, "明天": 1, "明日": 1, "后天": 2, "大后天": 3}
+
+
+def parse_date(text: str, today: date | None = None) -> date | None:
+    """把标题里的日期解析出来；`11月2日` / `2026-11-02` / `11/2` / `明天` 都可以。"""
+    label = _normalize(text)
+    today = today or date.today()
+
+    for word, offset in _RELATIVE.items():
+        if word in label:
+            return today + timedelta(days=offset)
+
+    for index, pattern in enumerate(_DATE_PATTERNS):
+        match = pattern.search(label)
+        if not match:
+            continue
+        groups = match.groups()
+        try:
+            if index == 0:
+                return date(int(groups[0]), int(groups[1]), int(groups[2]))
+            month, day = int(groups[0]), int(groups[1])
+        except ValueError:
+            return None
+        candidate = date(today.year, month, day)
+        # 已经过去很久的日期，大概率指的是明年
+        if (today - candidate).days > 180:
+            candidate = date(today.year + 1, month, day)
+        return candidate
+    return None
+
+
+def describe_date(value: date | None, today: date | None = None) -> str:
+    if value is None:
+        return "未识别"
+    today = today or date.today()
+    delta = (value - today).days
+    if delta == 0:
+        return f"{value.month}月{value.day}日 · 今天"
+    if delta == 1:
+        return f"{value.month}月{value.day}日 · 明天"
+    if delta < 0:
+        return f"{value.month}月{value.day}日 · 逾期 {-delta} 天"
+    return f"{value.month}月{value.day}日 · 还有 {delta} 天"

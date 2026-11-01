@@ -7,7 +7,7 @@
   },
   "mapping": {
     "root_path": ["周计划"],
-    "mode": "A",
+    "mode": "week",
     "aliases": {}
   },
   "vocabulary": {

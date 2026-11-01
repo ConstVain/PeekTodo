@@ -9,7 +9,8 @@ from dataclasses import dataclass, field
 
 from .model import MappingResult
 from .sources.base import FetchResult
-from .vocabulary import describe_when
+from .structure import MODE_LABELS, MODE_WEEK
+from .vocabulary import describe_date, describe_when
 
 
 @dataclass
@@ -53,16 +54,22 @@ def build_report(fetch: FetchResult, result: MappingResult, root_path: list[str]
 
     for group in result.groups:
         depths = [t.depth for t in group.tasks]
+        if result.mode_used == MODE_WEEK:
+            recognized = group.when is not None
+            when_text = describe_when(group.when)
+        else:
+            recognized = group.due is not None
+            when_text = describe_date(group.due)
         report.groups.append(
             GroupReport(
                 label=group.label,
-                when_text=describe_when(group.when),
-                recognized=group.when is not None,
+                when_text=when_text,
+                recognized=recognized,
                 task_count=len(group.tasks),
                 max_depth=max(depths) if depths else 0,
             )
         )
-        if group.when is None and result.mode_used == "A":
+        if not recognized:
             report.unrecognized.append(group.label)
         report.task_total += len(group.tasks)
         report.task_done += sum(1 for t in group.tasks if t.done)
@@ -86,9 +93,10 @@ def render_report(report: Report, width: int = 26) -> str:
     root = " > ".join(report.root_path) if report.root_path else "（整篇文档）"
     lines.append(f"根     {root}")
 
-    mode_note = report.mode_used
+    mode_note = MODE_LABELS.get(report.mode_used, report.mode_used)
     if report.mode_configured != report.mode_used:
-        mode_note += f"（配置是 {report.mode_configured}，按结构自动调整）"
+        configured = MODE_LABELS.get(report.mode_configured, report.mode_configured)
+        mode_note += f"（配置是「{configured}」，按结构自动调整）"
     lines.append(f"模式   {mode_note}")
     lines.append("─" * 46)
 
