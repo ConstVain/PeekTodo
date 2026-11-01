@@ -31,15 +31,15 @@ pip install -r requirements.txt
 python -m peek_todo
 ```
 
-首次运行会弹出设置向导：选数据源 → 在结构树里点一个节点当根 → 选模式 → 保存。
+首次运行会打开设置面板：选数据源 → 在结构树里点一个节点当根 → 选模式 → 保存。\n没有现成文档的话，点「新建 Markdown 文档」，会生成一份带示例内容的模板并直接打开给你改。之后随时可以从托盘菜单「设置…」再打开，刷新间隔、强调色、开机自启都在那里改。
 
-![向导](docs/screenshot-wizard.png)
+![设置](docs/screenshot-settings.png)
 
 之后：
 
 ```bash
 peektodo                    # 正常使用（托盘常驻）
-peektodo --setup            # 重新设置
+peektodo --setup            # 打开设置面板
 peektodo --force-shown      # 强制展开，调样式用
 peektodo --doctor           # 命令行体检
 ```
@@ -55,6 +55,13 @@ peektodo --doctor           # 命令行体检
 | **备忘单** | 直接是事项（没有分组） | 全部常驻，不做任何筛选 | 本周计划、长期提醒 |
 
 前两种的结构一样（根 → 分组 → 事项），区别只在于**分组标题怎么解读**：当作"一周里的某个时段"，还是当作"某个日期"。备忘单没有分组，根下面就是清单。
+
+<table>
+<tr>
+<td width="50%"><b>截止日</b>：逾期标红，其余按日期排<br><img src="docs/screenshot-due.png"></td>
+<td width="50%"><b>备忘单</b>：一张常驻清单<br><img src="docs/screenshot-memo.png"></td>
+</tr>
+</table>
 
 日期支持这些写法：`11月2日`、`11月3号`、`2026-11-02`、`11/2`、`今天`、`明天`、`后天`。
 时段支持：`周一下午`、`星期二上午`、`礼拜三`、`周7 早上`，也可以在 `config.json` 的 `vocabulary` 里加别名。
@@ -101,7 +108,7 @@ peek_todo/
 │  └─ mubu.py       幕布本地备份
 └─ ui/
    ├─ panel.py      面板
-   └─ wizard.py     首次设置向导
+   └─ settings.py   设置面板（首次运行也用它）
 ```
 
 ## 开发

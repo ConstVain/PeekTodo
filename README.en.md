@@ -30,9 +30,9 @@ pip install -r requirements.txt
 python -m peek_todo
 ```
 
-Requires Python 3.10+ and Windows 10/11. The first launch opens a setup wizard: pick a source, click a node in the structure tree to use as root, choose a mode, save.
+Requires Python 3.10+ and Windows 10/11. The first launch opens the settings panel: pick a source, click a node in the structure tree to use as root, choose a mode, save. No document yet? Hit “新建 Markdown 文档” — it writes a sample template and opens it for editing. Reopen it any time from the tray menu; refresh interval, accent colour and autostart live there too.
 
-![wizard](docs/screenshot-wizard.png)
+![settings](docs/screenshot-settings.png)
 
 Afterwards:
 
@@ -99,7 +99,7 @@ peek_todo/
 │  └─ mubu.py       local Mubu backup
 └─ ui/
    ├─ panel.py      the panel
-   └─ wizard.py     first-run setup
+   └─ settings.py   settings panel (also first run)
 ```
 
 ## Development
