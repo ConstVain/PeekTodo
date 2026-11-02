@@ -23,44 +23,51 @@ from ..model import Task
 from ..win32 import raise_foreground, set_no_activate
 
 from ..selection import View
+from .theme import Theme, accent as theme_accent, get as get_theme
 
-ACCENT = "#7aa2ff"
-DIM = "#9aa1ad"
-FAINT = "#6b7280"
-OVERDUE = "#f87171"
+ACCENT = "#7aa2ff"  # 兜底色，实际用 theme.accent()
 
-# 当前时段的外框：左侧一道色条 + 深一档的底色，把"现在要做"和其它区域分开
-CURRENT_BLOCK_QSS = """
-#currentBlock {
-    background: rgba(255, 255, 255, 0.035);
-    border-left: 3px solid %s;
-    border-radius: 9px;
-}
-"""
 
-GROUP_HEAD_QSS = """
-QWidget#groupHead {
-    background: transparent;
-    border-top: 1px solid rgba(255, 255, 255, 0.07);
-}
-"""
-
-CARD_QSS = """
-#card {
+def card_qss(t: Theme) -> str:
+    return f"""
+#card {{
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                 stop:0 #24262d, stop:0.38 #1a1b20, stop:1 #14151a);
+                 stop:0 {t.card_top}, stop:0.38 {t.card_mid}, stop:1 {t.card_bottom});
     border-top-left-radius: 14px;
     border-bottom-left-radius: 14px;
-    border-left: 1px solid #2e313a;
-}
+    border-left: 1px solid {t.card_border};
+}}
 """
 
-SCROLL_QSS = """
-QScrollArea { background: transparent; border: none; }
-QScrollBar:vertical { background: transparent; width: 4px; margin: 0; }
-QScrollBar::handle:vertical { background: rgba(255,255,255,40); border-radius: 2px; min-height: 24px; }
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
-QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
+
+def current_block_qss(t: Theme, accent: str) -> str:
+    """当前时段：左侧一道色条 + 深/浅一档的底色，把"现在要做"分出来。"""
+    return f"""
+#currentBlock {{
+    background: {t.current_bg};
+    border-left: 3px solid {accent};
+    border-radius: 9px;
+}}
+"""
+
+
+def group_head_qss(t: Theme, first: bool) -> str:
+    border = "transparent" if first else t.divider
+    return f"""
+QWidget#groupHead {{
+    background: transparent;
+    border-top: 1px solid {border};
+}}
+"""
+
+
+def scroll_qss(t: Theme) -> str:
+    return f"""
+QScrollArea {{ background: transparent; border: none; }}
+QScrollBar:vertical {{ background: transparent; width: 4px; margin: 0; }}
+QScrollBar::handle:vertical {{ background: {t.scroll_handle}; border-radius: 2px; min-height: 24px; }}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
 """
 
 
@@ -117,9 +124,12 @@ class TaskRow(QWidget):
         accent: str = ACCENT,
         overdue: bool = False,
         scale: float = 1.0,
+        theme: Theme | None = None,
         parent=None,
     ):
         super().__init__(parent)
+        t = theme or get_theme(None)
+        self._theme = t
         self.task = task
         self._hover = False
         self._small = small
@@ -147,11 +157,11 @@ class TaskRow(QWidget):
         size = max(8, round(base * self._scale))
 
         if task.done:
-            box_color = "#565d69"
+            box_color = t.done_box
         elif overdue:
-            box_color = OVERDUE
+            box_color = t.overdue
         elif small or muted or task.depth > 0:
-            box_color = FAINT
+            box_color = t.text_faint
         else:
             box_color = accent
 
@@ -169,17 +179,17 @@ class TaskRow(QWidget):
         text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         text.setFont(_font(size, strike=task.done))
         if task.done:
-            color = "#565d69"
+            color = t.text_done
         elif overdue:
-            color = OVERDUE
+            color = t.overdue
         elif muted:
-            color = DIM
+            color = t.text_dim
         elif task.depth == 0:
-            color = "#eef0f4" if not small else "#d8dce4"
+            color = t.text if not small else t.text_soft
         elif task.depth == 1:
-            color = "#b6bcc7"
+            color = t.text_soft
         else:
-            color = DIM
+            color = t.text_dim
         text.setStyleSheet(f"color: {color}; background: transparent;")
 
         layout.addWidget(box)
@@ -200,7 +210,7 @@ class TaskRow(QWidget):
             painter = QPainter(self)
             painter.setRenderHint(QPainter.Antialiasing)
             painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor(255, 255, 255, 16))
+            painter.setBrush(QColor(*self._theme.hover))
             painter.drawRoundedRect(self.rect(), 7, 7)
         super().paintEvent(event)
 
@@ -238,8 +248,10 @@ class Panel(QWidget):
         screen_geometry,
         animate_ms: int = 90,
         manual_height: bool = False,
+        theme: Theme | None = None,
     ):
         super().__init__(None)
+        self.theme = theme or get_theme(None)
         self._width = width
         self._height = height
         self._scale = max(0.75, min(width / self.BASE_WIDTH, 1.7))
@@ -345,6 +357,17 @@ class Panel(QWidget):
         if not self._manual_size:
             self.fit_height()
 
+    def set_theme(self, theme: Theme) -> None:
+        """换配色：重刷卡片/滚动条样式，再把当前内容重画一遍。"""
+        if theme is self.theme:
+            return
+        self.theme = theme
+        self.card.setStyleSheet(card_qss(theme))
+        self.scroll.setStyleSheet(scroll_qss(theme))
+        self._restyle()
+        if self._last_view is not None:
+            self.render(self._last_view, self._last_meta or {})
+
     def _apply_geometry(self, x: int, y: int, width: int, height: int) -> None:
         self._width = width
         self._height = height
@@ -357,7 +380,7 @@ class Panel(QWidget):
     def _build_ui(self):
         self.card = QFrame(self)
         self.card.setObjectName("card")
-        self.card.setStyleSheet(CARD_QSS)
+        self.card.setStyleSheet(card_qss(self.theme))
         self.card.setGeometry(self._width, 0, self._width, self._height)
 
         root = QVBoxLayout(self.card)
@@ -370,14 +393,14 @@ class Panel(QWidget):
         left.setSpacing(2)
         self.headline = QLabel("—")
         self.headline.setStyleSheet(
-            "color:#eef0f4; font-size:17px; font-weight:600; background:transparent;"
+            f"color:{self.theme.text}; font-size:17px; font-weight:600; background:transparent;"
         )
         self.meta = QLabel("—")
-        self.meta.setStyleSheet(f"color:{FAINT}; font-size:11px; background:transparent;")
+        self.meta.setStyleSheet(f"color:{self.theme.text_faint}; font-size:11px; background:transparent;")
         left.addWidget(self.headline)
         left.addWidget(self.meta)
         self.clock = QLabel("--:--")
-        self.clock.setStyleSheet(f"color:{DIM}; font-size:12px; background:transparent;")
+        self.clock.setStyleSheet(f"color:{self.theme.text_dim}; font-size:12px; background:transparent;")
         self.clock.setAlignment(Qt.AlignRight | Qt.AlignTop)
         head.addLayout(left, 1)
         head.addWidget(self.clock)
@@ -385,7 +408,7 @@ class Panel(QWidget):
 
         self.current_block = QFrame()
         self.current_block.setObjectName("currentBlock")
-        self.current_block.setStyleSheet(CURRENT_BLOCK_QSS % ACCENT)
+        self.current_block.setStyleSheet(current_block_qss(self.theme, theme_accent(self.theme, ACCENT)))
         self.current_box = QVBoxLayout(self.current_block)
         self.current_box.setContentsMargins(10, 9, 10, 9)
         self.current_box.setSpacing(7)
@@ -393,7 +416,7 @@ class Panel(QWidget):
 
         self.unknown_label = QLabel("未识别时间")
         self.unknown_label.setStyleSheet(
-            f"color:{FAINT}; font-size:10px; background:transparent; margin-bottom:2px;"
+            f"color:{self.theme.text_faint}; font-size:10px; background:transparent; margin-bottom:2px;"
         )
         self.unknown_label.hide()
         root.addWidget(self.unknown_label)
@@ -410,13 +433,13 @@ class Panel(QWidget):
         divider.setSpacing(8)
         line = QFrame()
         line.setFixedHeight(1)
-        line.setStyleSheet("background: rgba(255,255,255,22);")
+        line.setStyleSheet(f"background: {self.theme.divider};")
         self.section_label = QLabel("今天全部")
         self.section_label.setStyleSheet(
-            f"color:{FAINT}; font-size:10px; letter-spacing:1px; background:transparent;"
+            f"color:{self.theme.text_faint}; font-size:10px; letter-spacing:1px; background:transparent;"
         )
         self.counts = QLabel("")
-        self.counts.setStyleSheet(f"color:{FAINT}; font-size:10px; background:transparent;")
+        self.counts.setStyleSheet(f"color:{self.theme.text_faint}; font-size:10px; background:transparent;")
         divider.addWidget(line, 1)
         divider.addWidget(self.section_label)
         divider.addWidget(self.counts)
@@ -425,7 +448,7 @@ class Panel(QWidget):
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QFrame.NoFrame)
-        self.scroll.setStyleSheet(SCROLL_QSS)
+        self.scroll.setStyleSheet(scroll_qss(self.theme))
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.all_host = QWidget()
         self.all_host.setStyleSheet("background: transparent;")
@@ -440,9 +463,9 @@ class Panel(QWidget):
         foot.setContentsMargins(0, 8, 0, 0)
         foot.setSpacing(6)
         self.dot = QLabel("●")
-        self.dot.setStyleSheet("color:#4ade80; font-size:8px; background:transparent;")
+        self.dot.setStyleSheet(f"color:{self.theme.ok}; font-size:8px; background:transparent;")
         self.status = QLabel("正在读取…")
-        self.status.setStyleSheet(f"color:{FAINT}; font-size:10px; background:transparent;")
+        self.status.setStyleSheet(f"color:{self.theme.text_faint}; font-size:10px; background:transparent;")
         self.status.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         # 状态放右下角：时间在前、来源在后
         foot.addStretch(1)
@@ -461,18 +484,18 @@ class Panel(QWidget):
         """把字号/间距按当前 scale 重新算一遍。"""
         px = self.px
         self.headline.setStyleSheet(
-            f"color:#eef0f4; font-size:{px(18)}px; font-weight:600; background:transparent;"
+            f"color:{self.theme.text}; font-size:{px(18)}px; font-weight:600; background:transparent;"
         )
-        self.meta.setStyleSheet(f"color:{FAINT}; font-size:{px(11)}px; background:transparent;")
-        self.clock.setStyleSheet(f"color:{DIM}; font-size:{px(12)}px; background:transparent;")
+        self.meta.setStyleSheet(f"color:{self.theme.text_faint}; font-size:{px(11)}px; background:transparent;")
+        self.clock.setStyleSheet(f"color:{self.theme.text_dim}; font-size:{px(12)}px; background:transparent;")
         self.unknown_label.setStyleSheet(
-            f"color:{FAINT}; font-size:{px(10)}px; background:transparent; margin-bottom:2px;"
+            f"color:{self.theme.text_faint}; font-size:{px(10)}px; background:transparent; margin-bottom:2px;"
         )
         self.section_label.setStyleSheet(
             f"color:{self._accent}; font-size:{px(10)}px; letter-spacing:1px; background:transparent;"
         )
-        self.counts.setStyleSheet(f"color:{FAINT}; font-size:{px(10)}px; background:transparent;")
-        self.status.setStyleSheet(f"color:{FAINT}; font-size:{px(10)}px; background:transparent;")
+        self.counts.setStyleSheet(f"color:{self.theme.text_faint}; font-size:{px(10)}px; background:transparent;")
+        self.status.setStyleSheet(f"color:{self.theme.text_faint}; font-size:{px(10)}px; background:transparent;")
         self.dot.setStyleSheet(
             f"color:{self._dot_color()}; font-size:{px(8)}px; background:transparent;"
         )
@@ -486,7 +509,7 @@ class Panel(QWidget):
         self._place_grips()
 
     def _dot_color(self) -> str:
-        return {"ok": "#4ade80", "warn": "#f0b45f"}.get(self._level, "#f87171")
+        return {"ok": self.theme.ok, "warn": self.theme.warn}.get(self._level, self.theme.overdue)
 
     # ---------- 动画 ----------
 
@@ -567,6 +590,7 @@ class Panel(QWidget):
     def _row(self, task: Task, *, small=False, muted=False, accent=ACCENT, overdue=False):
         row = TaskRow(
             task,
+            theme=self.theme,
             small=small,
             muted=muted,
             accent=accent,
@@ -582,7 +606,7 @@ class Panel(QWidget):
         label = QLabel(text)
         label.setWordWrap(True)
         label.setStyleSheet(
-            f"color:{FAINT}; font-size:{self.px(12)}px; background:transparent;"
+            f"color:{self.theme.text_faint}; font-size:{self.px(12)}px; background:transparent;"
         )
         return label
 
@@ -591,7 +615,7 @@ class Panel(QWidget):
         host = QWidget()
         host.setObjectName("groupHead")
         host.setAttribute(Qt.WA_StyledBackground, True)
-        host.setStyleSheet(GROUP_HEAD_QSS if not first else "QWidget#groupHead{background: transparent;}")
+        host.setStyleSheet(group_head_qss(self.theme, first))
         row = QHBoxLayout(host)
         row.setContentsMargins(0, self.px(9) if not first else self.px(3), 0, self.px(5))
         row.setSpacing(self.px(6))
@@ -599,7 +623,7 @@ class Panel(QWidget):
         chip = QLabel(label)
         chip.setStyleSheet(
             f"color:{accent}; font-size:{self.px(10)}px; letter-spacing:0.4px;"
-            f"background: rgba(255,255,255,0.055); border-radius:4px;"
+            f"background: {self.theme.chip_bg}; border-radius:4px;"
             f"padding:{self.px(2)}px {self.px(7)}px;"
         )
         row.addWidget(chip)
@@ -614,7 +638,7 @@ class Panel(QWidget):
         self._level = meta.get("level", "ok")
         self.headline.setText(view.headline)
         self.meta.setText(f"{view.weekday} · {view.now.month}月{view.now.day}日")
-        self.current_block.setStyleSheet(CURRENT_BLOCK_QSS % accent)
+        self.current_block.setStyleSheet(current_block_qss(self.theme, accent))
         self._restyle()
 
         self._clear(self.current_box)

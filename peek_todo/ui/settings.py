@@ -35,6 +35,7 @@ from ..sources.base import SourceError
 from ..sources.markdown import MarkdownSource
 from ..sources.mubu import MubuSource, list_documents
 from ..template import DEFAULT_FILENAME, write_template
+from .theme import THEMES
 from ..structure import (
     MODE_DUE,
     MODE_LABELS,
@@ -249,6 +250,12 @@ class SettingsDialog(QDialog):
             self.accent_combo.addItem(label, key)
             self.accent_combo.setItemData(self.accent_combo.count() - 1, color, Qt.ToolTipRole)
         row1.addWidget(self.accent_combo)
+        row1.addSpacing(18)
+        row1.addWidget(self._plain("配色"))
+        self.theme_combo = QComboBox()
+        for key, theme in THEMES.items():
+            self.theme_combo.addItem(theme.name, key)
+        row1.addWidget(self.theme_combo)
         row1.addStretch(1)
         self.autostart_check = QCheckBox("开机自启")
         row1.addWidget(self.autostart_check)
@@ -446,6 +453,9 @@ class SettingsDialog(QDialog):
         accent = self.accent_combo.findData(panel.get("accent", "auto"))
         self.accent_combo.setCurrentIndex(max(0, accent))
 
+        theme_index = self.theme_combo.findData(panel.get("theme", "dark"))
+        self.theme_combo.setCurrentIndex(max(0, theme_index))
+
         from .. import autostart, shortcut
 
         self.autostart_check.setChecked(bool(behavior.get("autostart")) or autostart.is_enabled())
@@ -526,6 +536,7 @@ class SettingsDialog(QDialog):
 
         refresh_ms = int(self.refresh_combo.currentData() or 5000)
         accent = self.accent_combo.currentData() or "auto"
+        theme_key = self.theme_combo.currentData() or "dark"
 
         self.result_config = {
             "version": 1,
@@ -537,7 +548,7 @@ class SettingsDialog(QDialog):
             },
             "vocabulary": {"weekdays": {}, "periods": {}},
             "periods": DEFAULT_PERIODS,
-            "panel": {**self._panel_cfg, "accent": accent},
+            "panel": {**self._panel_cfg, "accent": accent, "theme": theme_key},
             "behavior": {
                 **DEFAULT_BEHAVIOR,
                 "refreshMs": refresh_ms,

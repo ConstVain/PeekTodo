@@ -26,6 +26,7 @@ from .opener import open_source as open_source_item
 from .state import LocalState
 from .structure import map_document
 from .ui.panel import Panel
+from .ui.theme import get as get_theme
 from .ui.settings import SettingsDialog
 
 
@@ -118,7 +119,14 @@ class Runner:
             int(panel_cfg["maxHeight"]),
         )
 
-        self.panel = Panel(self.width, height, geo, animate_ms=int(panel_cfg["animateMs"]))
+        self.panel = Panel(
+            self.width,
+            height,
+            geo,
+            animate_ms=int(panel_cfg["animateMs"]),
+            manual_height=bool(panel_cfg.get("height")),
+            theme=get_theme(panel_cfg.get("theme")),
+        )
         self.panel.open_source_requested.connect(self.open_source)
         self.panel.task_toggled.connect(self.on_toggle)
         self.panel.show()
@@ -379,6 +387,7 @@ class Runner:
         autostart.toggle(bool(dialog.result_config["behavior"].get("autostart")))
         _apply_desktop_shortcut(dialog.result_config)
         self.cfg = Config.load(config_path())
+        self.panel.set_theme(get_theme(self.cfg.panel.get("theme")))
         self.rebuild()
         self.refresh()
 
