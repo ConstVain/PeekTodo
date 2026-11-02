@@ -6,7 +6,9 @@ import json
 import os
 import sys
 import time
+import traceback
 from datetime import datetime
+from functools import wraps
 from pathlib import Path
 
 from PyQt5.QtCore import Qt, QTimer
@@ -62,6 +64,23 @@ def state_path() -> Path:
 def far_from_panel(rect, pos, pad: int = 60) -> bool:
     """点击位置是否离面板足够远（用来判断"点到别处去了"）。"""
     return not rect.adjusted(-pad, -pad, pad, pad).contains(pos)
+
+
+def safe_slot(func):
+    """定时器/菜单槽里抛异常会让 PyQt5 直接 abort，包一层只记日志。
+
+    之前踩过：槽里一个 NameError 就整进程闪退，日志里只剩 0xc0000409。
+    """
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception:  # noqa: BLE001
+            traceback.print_exc()
+            return None
+
+    return wrapper
 
 
 def make_no_activate(panel: Panel) -> None:
@@ -158,6 +177,7 @@ class Runner:
             return f"mubu:{source.get('docId')}"
         return f"markdown:{self.cfg.source_path()}"
 
+    @safe_slot
     def refresh(self) -> None:
         try:
             fetch = self.source.fetch()
@@ -239,6 +259,7 @@ class Runner:
 
     # ---------- 交互 ----------
 
+    @safe_slot
     def on_toggle(self, task_id: str) -> None:
         current = None
         if self._last_ok:
@@ -253,6 +274,7 @@ class Runner:
     def open_source(self) -> None:
         open_source_item(self.cfg.source)
 
+    @safe_slot
     def tick(self) -> None:
         if self.forced:
             return
@@ -355,9 +377,19 @@ class Runner:
             encoding="utf-8",
         )
         autostart.toggle(bool(dialog.result_config["behavior"].get("autostart")))
+        _apply_desktop_shortcut(dialog.result_config)
         self.cfg = Config.load(config_path())
         self.rebuild()
         self.refresh()
+
+
+def _apply_desktop_shortcut(config: dict) -> None:
+    """按设置里那个勾选框创建/删除桌面快捷方式，失败只记日志。"""
+    if config.get("behavior", {}).get("desktopShortcut", True):
+        if shortcut.create() is None:
+            print("创建桌面快捷方式失败", file=sys.stderr, flush=True)
+    else:
+        shortcut.remove()
 
 
 def ensure_config(force: bool = False) -> Config | None:
@@ -379,8 +411,7 @@ def ensure_config(force: bool = False) -> Config | None:
         json.dumps(dialog.result_config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     autostart.toggle(bool(dialog.result_config["behavior"].get("autostart")))
-    if dialog.result_config["behavior"].get("desktopShortcut", True):
-        shortcut.create()
+    _apply_desktop_shortcut(dialog.result_config)
     return Config.load(path)
 
 

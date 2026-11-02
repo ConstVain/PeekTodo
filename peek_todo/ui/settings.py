@@ -126,6 +126,8 @@ class SettingsDialog(QDialog):
         self._tree_root: Node | None = None
         self._node_by_item: dict[int, Node] = {}
         self._restoring = False
+        # 已有的面板设置（宽度/高度等），保存时原样带回去，别被默认值覆盖
+        self._panel_cfg: dict = dict(DEFAULT_PANEL)
 
         self._build_ui()
 
@@ -432,6 +434,7 @@ class SettingsDialog(QDialog):
         config = config or {}
         behavior = {**DEFAULT_BEHAVIOR, **(config.get("behavior") or {})}
         panel = {**DEFAULT_PANEL, **(config.get("panel") or {})}
+        self._panel_cfg = panel
 
         index = self.refresh_combo.findData(int(behavior.get("refreshMs", 5000)))
         if index < 0:
@@ -503,6 +506,16 @@ class SettingsDialog(QDialog):
         self.tree.setFocus()
 
     def _save(self):
+        # 槽函数里抛异常会让 PyQt5 直接 abort（表现为闪退），这里兜住
+        try:
+            self._save_inner()
+        except Exception as exc:  # noqa: BLE001
+            import traceback
+
+            traceback.print_exc()
+            QMessageBox.warning(self, "保存失败", f"{type(exc).__name__}: {exc}")
+
+    def _save_inner(self):
         if not self._source:
             QMessageBox.warning(self, "还没选数据源", "先选一个 Markdown 文件、文件夹或幕布文档。")
             return
@@ -524,7 +537,7 @@ class SettingsDialog(QDialog):
             },
             "vocabulary": {"weekdays": {}, "periods": {}},
             "periods": DEFAULT_PERIODS,
-            "panel": {**panel, "accent": accent},
+            "panel": {**self._panel_cfg, "accent": accent},
             "behavior": {
                 **DEFAULT_BEHAVIOR,
                 "refreshMs": refresh_ms,
