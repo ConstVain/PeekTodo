@@ -1,6 +1,6 @@
 # PeekTodo
 
-A todo panel that lives on the right edge of your screen. Move your mouse to the far right of the primary display and it slides out with what you should be doing right now; move away and it slides back. Tray-resident, never steals focus, optional autostart.
+A todo panel that lives on the right edge of your screen. Move your mouse to the far right of the primary display and it slides out with what you should be doing right now; move away and it slides back. Click it to pin, drag a corner to resize. Tray-resident, doesn't steal focus unless you click it, optional autostart.
 
 [中文说明](README.md)
 
@@ -30,7 +30,7 @@ pip install -r requirements.txt
 python -m peek_todo
 ```
 
-Requires Python 3.10+ and Windows 10/11. The first launch opens the settings panel: pick a source, click a node in the structure tree to use as root, choose a mode, save. No document yet? Hit “新建 Markdown 文档” — it writes a sample template and opens it for editing. Reopen it any time from the tray menu; refresh interval, accent colour and autostart live there too.
+Requires Python 3.10+ and Windows 10/11. The first launch opens the settings panel: pick a source, click a node in the structure tree to use as root, choose a mode, save. No document yet? Hit “新建 Markdown 文档” — it writes a sample template and opens it for editing. Reopen it any time from the tray menu; refresh interval, accent colour, autostart and the desktop shortcut live there too.
 
 ![settings](docs/screenshot-settings.png)
 
@@ -40,6 +40,7 @@ Afterwards (when launched from a terminal it moves itself to the background, so 
 peektodo                 # normal use (tray resident)
 peektodo --setup         # reconfigure
 peektodo --force-shown   # keep the panel open, for tweaking styles
+peektodo --force         # start another instance even if one is already running
 peektodo --doctor        # print what the parser understood (stays in the foreground)
 peektodo --no-detach     # stay in the foreground for logs
 ```
@@ -47,6 +48,40 @@ peektodo --no-detach     # stay in the foreground for logs
 Installed as a package, config lives in `%APPDATA%\PeekTodo\`. Running from source keeps it in the repo root (portable).
 
 No terminal needed: double-click `start.cmd`, which launches it via `pythonw` in the background.
+
+### Desktop shortcut
+
+Saving the settings for the first time drops a `PeekTodo` shortcut on your Desktop (app icon, starts in the background with no console). Uncheck “桌面快捷方式” in the settings to remove it. To recreate it by hand:
+
+```bash
+powershell -ExecutionPolicy Bypass -File tools\install_shortcut.ps1
+```
+
+### Updating
+
+Already have a copy? Update **inside the folder you originally cloned**, don't clone again:
+
+```bash
+cd PeekTodo
+git pull
+python -m pip install --no-build-isolation --force-reinstall .   # skip if you installed with pip install -e .
+```
+
+Then quit from the tray icon and start it again. `config.json` and `.state.json` are gitignored, so updating leaves your settings and checked items alone.
+
+## Using it
+
+| Action | Result |
+|---|---|
+| Mouse to the far right edge | panel slides out |
+| Move away | slides back |
+| **Click the panel** | pins it: takes focus and stays while the mouse moves away |
+| **Drag the top-left / bottom-left corner** | resizes the panel, text scales with it; dragging outside the panel doesn't retract it |
+| Click a checkbox | tick/untick (local to the panel, never touches the source file) |
+| Double-click a row's text | open the source file in your default editor |
+| Click far from the panel / Esc | unpin and retract |
+
+The size you drag to is remembered (`panel.width` / `panel.height` in `config.json`).
 
 ## Three modes
 
@@ -103,13 +138,17 @@ peek_todo/
 ├─ report.py        parse report
 ├─ doctor.py        CLI diagnostics
 ├─ autostart.py     autostart via HKCU Run
+├─ shortcut.py      desktop shortcut
+├─ opener.py        open the source file
+├─ template.py      template used by "new Markdown document"
+├─ win32.py         pywin32 loading fallback, window styles, key state
 ├─ app.py           entry point: window, tray, polling
 ├─ assets/          tray icon and app icon
 ├─ sources/
 │  ├─ markdown.py   headings + list items
 │  └─ mubu.py       local Mubu backup
 └─ ui/
-   ├─ panel.py      the panel
+   ├─ panel.py      the panel (with drag-to-resize)
    └─ settings.py   settings panel (also first run)
 ```
 
