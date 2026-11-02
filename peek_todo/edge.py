@@ -37,8 +37,17 @@ class EdgeDetector:
         self.hide_delay_ms = hide_delay_ms
         self.shown = False
         self._hide_at: float | None = None
+        # 面板被用户拖拽改过大小/位置后，直接记实际矩形，不再按屏幕推算
+        self._rect: Rect | None = None
+
+    def set_geometry(self, x: int, y: int, width: int, height: int) -> None:
+        self.panel_width = width
+        self.panel_height = height
+        self._rect = Rect(x, y, width, height)
 
     def panel_rect(self, screen: Rect) -> Rect:
+        if self._rect is not None:
+            return self._rect
         top = screen.y + round((screen.height - self.panel_height) / 2)
         return Rect(screen.right - self.panel_width, top, self.panel_width, self.panel_height)
 

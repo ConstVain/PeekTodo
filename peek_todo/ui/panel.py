@@ -6,9 +6,10 @@
 
 from __future__ import annotations
 
-from PyQt5.QtCore import QEasingCurve, QPoint, QPropertyAnimation, Qt, QTimer, pyqtSignal
+from PyQt5.QtCore import QEasingCurve, QEvent, QPoint, QPropertyAnimation, Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QColor, QFont, QPainter
 from PyQt5.QtWidgets import (
+    QApplication,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -19,6 +20,8 @@ from PyQt5.QtWidgets import (
 )
 
 from ..model import Task
+from ..win32 import raise_foreground, set_no_activate
+
 from ..selection import View
 
 ACCENT = "#7aa2ff"
@@ -68,9 +71,42 @@ def _font(size: int, strike: bool = False) -> QFont:
     return font
 
 
+class _Grip(QWidget):
+    """左边缘的缩放把手：只有光标变化，不画任何东西。"""
+
+    def __init__(self, panel: "Panel", corner: str, parent=None):
+        super().__init__(parent or panel.card)
+        self._panel = panel
+        self._corner = corner
+        self._start = None
+        self._geo = None
+        self.setCursor(Qt.SizeFDiagCursor if corner == "tl" else Qt.SizeBDiagCursor)
+        self.setToolTip("拖拽调整面板大小")
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+
+    def mousePressEvent(self, event):
+        if event.button() != Qt.LeftButton:
+            return
+        self._panel.pin(True)
+        self._start = event.globalPos()
+        self._geo = self._panel.geometry()
+
+    def mouseMoveEvent(self, event):
+        if self._start is None:
+            return
+        self._panel.drag_resize(self._corner, self._start, self._geo, event.globalPos())
+
+    def mouseReleaseEvent(self, event):
+        if self._start is None:
+            return
+        self._start = None
+        self._panel.end_resize()
+
+
 class TaskRow(QWidget):
     toggled = pyqtSignal(str)
     opened = pyqtSignal(str)
+    pressed = pyqtSignal()
 
     def __init__(
         self,
@@ -80,21 +116,23 @@ class TaskRow(QWidget):
         muted: bool = False,
         accent: str = ACCENT,
         overdue: bool = False,
+        scale: float = 1.0,
         parent=None,
     ):
         super().__init__(parent)
         self.task = task
         self._hover = False
         self._small = small
+        self._scale = max(0.7, min(scale, 1.8))
         self.setAttribute(Qt.WA_Hover, True)
         self.setCursor(Qt.PointingHandCursor)
-        self.setToolTip("点方框勾选（仅面板） · 点文字打开源")
+        self.setToolTip("点方框勾选（只改面板本地状态） · 双击文字打开源 · 点空白处钉住面板")
 
         layout = QHBoxLayout(self)
         # 子项缩进：一级子项退一格，二级再退一格，视觉上明确从属关系
-        indent = min(task.depth, 3) * (16 if small else 20)
+        indent = min(task.depth, 3) * max(6, round((16 if small else 20) * self._scale))
         layout.setContentsMargins(indent, 0, 0, 0)
-        layout.setSpacing(8)
+        layout.setSpacing(max(4, round(8 * self._scale)))
 
         if task.done:
             mark = "✓" if small else "☑"
@@ -103,9 +141,10 @@ class TaskRow(QWidget):
 
         # 层级越深字号掉得越狠：0 -> 16/12，1 -> 11/9，2+ -> 9/8
         if small:
-            size = 12 if task.depth == 0 else 9 if task.depth == 1 else 8
+            base = 12 if task.depth == 0 else 9 if task.depth == 1 else 8
         else:
-            size = 16 if task.depth == 0 else 11 if task.depth == 1 else 9
+            base = 16 if task.depth == 0 else 11 if task.depth == 1 else 9
+        size = max(8, round(base * self._scale))
 
         if task.done:
             box_color = "#565d69"
@@ -117,7 +156,8 @@ class TaskRow(QWidget):
             box_color = accent
 
         box = QLabel(mark)
-        box.setFixedWidth(12 if small else 16)
+        self._box_w = max(10, round((12 if small else 16) * self._scale))
+        box.setFixedWidth(self._box_w)
         box.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
         box.setStyleSheet(
             f"color: {box_color};"
@@ -167,9 +207,14 @@ class TaskRow(QWidget):
     def mousePressEvent(self, event):
         if event.button() != Qt.LeftButton:
             return
-        if event.pos().x() <= (12 if self._small else 16) + 6:
+        self.pressed.emit()
+        # 只有点勾选框才切换状态；点文字不做事（钉住由面板的事件过滤器处理），
+        # 想打开源文件用双击——避免"想钉住却把编辑器打开了"
+        if event.pos().x() <= self._box_w + round(6 * self._scale):
             self.toggled.emit(self.task.id)
-        else:
+
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.LeftButton:
             self.opened.emit(self.task.id)
 
 
@@ -177,22 +222,48 @@ class Panel(QWidget):
     open_source_requested = pyqtSignal()
     task_toggled = pyqtSignal(str)
     height_changed = pyqtSignal(int)
+    resized = pyqtSignal(int, int)
+    pinned_changed = pyqtSignal(bool)
+    drag_started = pyqtSignal()
+    drag_finished = pyqtSignal()
 
-    def __init__(self, width: int, height: int, screen_geometry, animate_ms: int = 90):
+    BASE_WIDTH = 360
+    MIN_WIDTH = 240
+    MAX_WIDTH = 640
+
+    def __init__(
+        self,
+        width: int,
+        height: int,
+        screen_geometry,
+        animate_ms: int = 90,
+        manual_height: bool = False,
+    ):
         super().__init__(None)
         self._width = width
         self._height = height
+        self._scale = max(0.75, min(width / self.BASE_WIDTH, 1.7))
+        # 配置里存了高度 = 用户定过的尺寸，不要再用自动高度覆盖它
+        self._explicit_height = manual_height
+        self._manual_size = manual_height
+        self._drag_dy = 0
+        self._dragging = False
+        self._pinned = False
+        self._last_view = None
+        self._last_meta = None
         self._animate_ms = animate_ms
         self._shown = False
         self._screen_geo = screen_geometry
         self._min_h = 200
         self._max_h = height
+        self._accent = ACCENT
+        self._level = "ok"
+        self._grips_ready = False
 
         self.setWindowFlags(
             Qt.FramelessWindowHint
             | Qt.WindowStaysOnTopHint
             | Qt.Tool
-            | Qt.WindowDoesNotAcceptFocus
             | Qt.NoDropShadowWindowHint
         )
         self.setAttribute(Qt.WA_TranslucentBackground, True)
@@ -207,9 +278,79 @@ class Panel(QWidget):
         )
 
         self._build_ui()
+        app = QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self)
         self._anim = QPropertyAnimation(self.card, b"pos", self)
         self._anim.setDuration(animate_ms)
         self._anim.setEasingCurve(QEasingCurve.OutCubic)
+        self._anim.finished.connect(self._place_grips)
+
+    # ---------- 尺寸 / 缩放 ----------
+
+    def px(self, base: float) -> int:
+        """按当前缩放换算一个像素尺寸。"""
+        return max(6, round(base * self._scale))
+
+    def _place_grips(self) -> None:
+        """两个把手贴在 card 左上/左下角，跟着 card 的位置走。"""
+        if not self._grips_ready:
+            return
+        size = self.px(14)
+        self._grip_tl.setGeometry(0, 0, size, size)
+        self._grip_bl.setGeometry(0, self.card.height() - size, size, size)
+        for grip in (self._grip_tl, self._grip_bl):
+            grip.raise_()
+
+    def drag_resize(self, corner: str, start, start_geo, now) -> None:
+        """拖左边缘：右边固定；左上角拖 → 下边固定，左下角拖 → 上边固定。"""
+        # 一开拖就交给用户，否则 render 触发的 fit_height 会跟拖拽打架
+        self._manual_size = True
+        if not self._dragging:
+            self._dragging = True
+            self.drag_started.emit()
+        dx = now.x() - start.x()
+        dy = now.y() - start.y()
+
+        width = max(self.MIN_WIDTH, min(start_geo.width() - dx, self.MAX_WIDTH))
+        max_h = max(self._min_h, self._screen_geo.height() - self.px(24))
+        if corner == "tl":
+            height = max(self._min_h, min(start_geo.height() - dy, max_h))
+            top = start_geo.y() + start_geo.height() - height
+        else:
+            height = max(self._min_h, min(start_geo.height() + dy, max_h))
+            top = start_geo.y()
+
+        right = self._screen_geo.x() + self._screen_geo.width()
+        self._apply_geometry(right - width, top, width, height)
+        self._drag_dy = dy
+
+        scale = max(0.75, min(width / self.BASE_WIDTH, 1.7))
+        if abs(scale - self._scale) >= 0.02:
+            self._scale = scale
+            self._restyle()
+            if self._last_view is not None:
+                self.render(self._last_view, self._last_meta or {})
+
+    def end_resize(self) -> None:
+        if self._dragging:
+            self._dragging = False
+            self.drag_finished.emit()
+        # 只拖宽不拖高的话，交回自动高度，别把面板永久钉死
+        if abs(self._drag_dy) > 2:
+            self._explicit_height = True
+        self._manual_size = self._explicit_height
+        self._max_h = max(self._height, self._max_h)
+        self.resized.emit(self._width, self._height)
+        if not self._manual_size:
+            self.fit_height()
+
+    def _apply_geometry(self, x: int, y: int, width: int, height: int) -> None:
+        self._width = width
+        self._height = height
+        self.setGeometry(x, y, width, height)
+        self.card.setGeometry(0 if self._shown else width, 0, width, height)
+        self._place_grips()
 
     # ---------- 构建 ----------
 
@@ -302,9 +443,50 @@ class Panel(QWidget):
         self.dot.setStyleSheet("color:#4ade80; font-size:8px; background:transparent;")
         self.status = QLabel("正在读取…")
         self.status.setStyleSheet(f"color:{FAINT}; font-size:10px; background:transparent;")
+        self.status.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        # 状态放右下角：时间在前、来源在后
+        foot.addStretch(1)
+        foot.addWidget(self.status)
         foot.addWidget(self.dot)
-        foot.addWidget(self.status, 1)
         root.addLayout(foot)
+
+        # 左边缘的两个缩放把手
+        self._grip_tl = _Grip(self, "tl", self.card)
+        self._grip_bl = _Grip(self, "bl", self.card)
+        self._grips_ready = True
+        self._place_grips()
+        self._restyle()
+
+    def _restyle(self) -> None:
+        """把字号/间距按当前 scale 重新算一遍。"""
+        px = self.px
+        self.headline.setStyleSheet(
+            f"color:#eef0f4; font-size:{px(18)}px; font-weight:600; background:transparent;"
+        )
+        self.meta.setStyleSheet(f"color:{FAINT}; font-size:{px(11)}px; background:transparent;")
+        self.clock.setStyleSheet(f"color:{DIM}; font-size:{px(12)}px; background:transparent;")
+        self.unknown_label.setStyleSheet(
+            f"color:{FAINT}; font-size:{px(10)}px; background:transparent; margin-bottom:2px;"
+        )
+        self.section_label.setStyleSheet(
+            f"color:{self._accent}; font-size:{px(10)}px; letter-spacing:1px; background:transparent;"
+        )
+        self.counts.setStyleSheet(f"color:{FAINT}; font-size:{px(10)}px; background:transparent;")
+        self.status.setStyleSheet(f"color:{FAINT}; font-size:{px(10)}px; background:transparent;")
+        self.dot.setStyleSheet(
+            f"color:{self._dot_color()}; font-size:{px(8)}px; background:transparent;"
+        )
+        layout = self.card.layout()
+        if layout is not None:
+            layout.setContentsMargins(px(18), px(14), px(14), px(10))
+        self.current_box.setContentsMargins(px(10), px(9), px(10), px(9))
+        self.current_box.setSpacing(px(7))
+        self.all_box.setContentsMargins(0, 0, px(4), 0)
+        self.all_box.setSpacing(max(1, px(1)))
+        self._place_grips()
+
+    def _dot_color(self) -> str:
+        return {"ok": "#4ade80", "warn": "#f0b45f"}.get(self._level, "#f87171")
 
     # ---------- 动画 ----------
 
@@ -322,6 +504,57 @@ class Panel(QWidget):
         self._anim.setEndValue(QPoint(0 if shown else self._width, 0))
         self._anim.start()
 
+    # ---------- 聚焦（钉住不收回） ----------
+
+    def is_pinned(self) -> bool:
+        return self._pinned
+
+    def pin(self, state: bool) -> None:
+        """钉住：拿焦点、鼠标移开也不收回；在远处点一下或按 Esc 才解除。
+
+        要点（都踩过坑）：
+        - 激活窗口必须推迟到下一轮事件循环，不能在鼠标事件里直接做；
+        - 窗口本身用 WS_EX_NOACTIVATE 保持"点得到但不抢焦点"，
+          只有钉住时才临时摘掉，解除时还原。
+        """
+        if state == self._pinned:
+            return
+        self._pinned = state
+        if state:
+            QTimer.singleShot(0, self._activate_if_pinned)
+        else:
+            set_no_activate(self, True)
+            self.setFocusPolicy(Qt.NoFocus)
+        self.pinned_changed.emit(state)
+
+    def _activate_if_pinned(self) -> None:
+        if not self._pinned:
+            return
+        set_no_activate(self, False)
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.activateWindow()
+        raise_foreground(self)
+        self.setFocus()
+
+    def eventFilter(self, obj, event):
+        """落在面板里的任何一次按下都算"点它"，不依赖哪个子控件接住事件。"""
+        if event.type() in (QEvent.MouseButtonPress, QEvent.MouseButtonDblClick):
+            widget = obj if isinstance(obj, QWidget) else None
+            if widget is not None and (widget is self or self.isAncestorOf(widget)):
+                self.pin(True)
+        return False
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.pin(True)
+        super().mousePressEvent(event)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape:
+            self.pin(False)
+            return
+        super().keyPressEvent(event)
+
     # ---------- 渲染 ----------
 
     def _clear(self, layout):
@@ -332,15 +565,25 @@ class Panel(QWidget):
                 widget.deleteLater()
 
     def _row(self, task: Task, *, small=False, muted=False, accent=ACCENT, overdue=False):
-        row = TaskRow(task, small=small, muted=muted, accent=accent, overdue=overdue)
+        row = TaskRow(
+            task,
+            small=small,
+            muted=muted,
+            accent=accent,
+            overdue=overdue,
+            scale=self._scale,
+        )
         row.toggled.connect(self.task_toggled.emit)
         row.opened.connect(lambda _tid: self.open_source_requested.emit())
+        row.pressed.connect(lambda: self.pin(True))
         return row
 
     def _hint(self, text: str) -> QLabel:
         label = QLabel(text)
         label.setWordWrap(True)
-        label.setStyleSheet(f"color:{FAINT}; font-size:12px; background:transparent;")
+        label.setStyleSheet(
+            f"color:{FAINT}; font-size:{self.px(12)}px; background:transparent;"
+        )
         return label
 
     def _group_header(self, label: str, accent: str, *, first: bool):
@@ -350,14 +593,14 @@ class Panel(QWidget):
         host.setAttribute(Qt.WA_StyledBackground, True)
         host.setStyleSheet(GROUP_HEAD_QSS if not first else "QWidget#groupHead{background: transparent;}")
         row = QHBoxLayout(host)
-        row.setContentsMargins(0, 9 if not first else 3, 0, 5)
-        row.setSpacing(6)
+        row.setContentsMargins(0, self.px(9) if not first else self.px(3), 0, self.px(5))
+        row.setSpacing(self.px(6))
 
         chip = QLabel(label)
         chip.setStyleSheet(
-            f"color:{accent}; font-size:10px; letter-spacing:0.4px;"
+            f"color:{accent}; font-size:{self.px(10)}px; letter-spacing:0.4px;"
             f"background: rgba(255,255,255,0.055); border-radius:4px;"
-            f"padding:2px 7px;"
+            f"padding:{self.px(2)}px {self.px(7)}px;"
         )
         row.addWidget(chip)
         row.addStretch(1)
@@ -365,15 +608,14 @@ class Panel(QWidget):
 
     def render(self, view: View, meta: dict):
         accent = view.accent
+        self._last_view = view
+        self._last_meta = meta
+        self._accent = accent
+        self._level = meta.get("level", "ok")
         self.headline.setText(view.headline)
-        self.headline.setStyleSheet(
-            f"color:#eef0f4; font-size:18px; font-weight:600; background:transparent;"
-        )
         self.meta.setText(f"{view.weekday} · {view.now.month}月{view.now.day}日")
         self.current_block.setStyleSheet(CURRENT_BLOCK_QSS % accent)
-        self.section_label.setStyleSheet(
-            f"color:{accent}; font-size:10px; letter-spacing:1px; background:transparent;"
-        )
+        self._restyle()
 
         self._clear(self.current_box)
         if view.current:
@@ -427,12 +669,9 @@ class Panel(QWidget):
         self.scroll.setVisible(view.show_bottom)
 
         level = meta.get("level", "ok")
+        self._level = level
         self.dot.setStyleSheet(
-            "color:#4ade80; font-size:8px; background:transparent;"
-            if level == "ok"
-            else "color:#f0b45f; font-size:8px; background:transparent;"
-            if level == "warn"
-            else "color:#f87171; font-size:8px; background:transparent;"
+            f"color:{self._dot_color()}; font-size:{self.px(8)}px; background:transparent;"
         )
         status = meta.get("status", "")
         if not view.show_bottom:
@@ -445,6 +684,7 @@ class Panel(QWidget):
         QTimer.singleShot(0, self.fit_height)
 
     def render_error(self, message: str, detail: str = ""):
+        self._level = "error"
         self.headline.setText("读不到数据")
         self.meta.setText("数据源异常")
         self._clear(self.current_box)
@@ -454,15 +694,21 @@ class Panel(QWidget):
         self._clear(self.all_box)
         self.all_box.addStretch(1)
         self.counts.setText("")
-        self.dot.setStyleSheet("color:#f87171; font-size:8px; background:transparent;")
+        self.dot.setStyleSheet(
+            f"color:{self._dot_color()}; font-size:{self.px(8)}px; background:transparent;"
+        )
         self.status.setText(detail or message)
         self.status.setToolTip(detail)
         QTimer.singleShot(0, self.fit_height)
 
     def fit_height(self) -> None:
+        if self._manual_size:
+            # 用户手动调过大小：高度由用户说了算，内容多了走滚动
+            self.card.setGeometry(0 if self._shown else self._width, 0, self._width, self._height)
+            return
         self.all_host.adjustSize()
         content = self.all_host.sizeHint().height()
-        self.scroll.setFixedHeight(max(28, min(content, 380)))
+        self.scroll.setFixedHeight(max(28, min(content, self.px(380))))
         self.card.layout().activate()
         wanted = self.card.layout().sizeHint().height()
         target = max(self._min_h, min(wanted, self._max_h))

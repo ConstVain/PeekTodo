@@ -14,6 +14,7 @@ from PyQt5.QtGui import QCursor, QIcon
 from PyQt5.QtWidgets import QAction, QApplication, QMenu, QMessageBox, QSystemTrayIcon
 
 from . import autostart, shortcut
+from .win32 import left_button_down
 from .config import Config, build_mapping, build_source
 from .doctor import main as doctor_main
 from .edge import EdgeDetector, Rect
@@ -56,6 +57,11 @@ def config_path() -> Path:
 
 def state_path() -> Path:
     return app_dir() / ".state.json"
+
+
+def far_from_panel(rect, pos, pad: int = 60) -> bool:
+    """点击位置是否离面板足够远（用来判断"点到别处去了"）。"""
+    return not rect.adjusted(-pad, -pad, pad, pad).contains(pos)
 
 
 def make_no_activate(panel: Panel) -> None:
@@ -107,6 +113,12 @@ class Runner:
             hot_zone_pad=int(panel_cfg.get("hotZonePad", 0)),
         )
         self.panel.height_changed.connect(self._on_height_changed)
+        self.panel.resized.connect(self._on_panel_resized)
+        self._was_down = False
+        self._dragging = False
+        self.panel.drag_started.connect(self._on_drag_started)
+        self.panel.drag_finished.connect(self._on_drag_finished)
+        self._sync_detector()
 
         self._last_ok = None
         self._render_sig: tuple | None = None
@@ -182,7 +194,7 @@ class Runner:
 
         stamp = fetch.fetched_at.strftime("%H:%M")
         level = "warn" if (fetch.warnings or view.unknown) else "ok"
-        status = f"{fetch.source_name} · {stamp}"
+        status = f"{stamp} · {fetch.source_name}"
         if fetch.warnings:
             status += " · 数据偏旧"
         elif view.unknown:
@@ -244,14 +256,54 @@ class Runner:
     def tick(self) -> None:
         if self.forced:
             return
+        if self._dragging:
+            # 正在拖角落调大小：既不收回，也不解除钉住
+            return
+        if self.panel.is_pinned():
+            # 钉住期间不自动收回；只在离面板够远的空白处单击一下才解除
+            self._maybe_unpin()
+            return
         pos = QCursor.pos()
         shown, _ = self.detector.update(
             (pos.x(), pos.y()), self.screen, time.monotonic() * 1000
         )
         self.panel.set_shown(shown)
 
+    def _on_drag_started(self) -> None:
+        self._dragging = True
+
+    def _on_drag_finished(self) -> None:
+        self._dragging = False
+
+    def _maybe_unpin(self) -> None:
+        down = left_button_down()
+        pressed_edge = down and not self._was_down
+        self._was_down = down
+        if not pressed_edge:
+            return
+        if far_from_panel(self.panel.geometry(), QCursor.pos()):
+            self.panel.pin(False)
+
     def _on_height_changed(self, height: int) -> None:
         self.detector.panel_height = height
+        self._sync_detector()
+
+    def _on_panel_resized(self, width: int, height: int) -> None:
+        """用户拖拽改变了面板大小：同步命中区域并记住。"""
+        self.width = width
+        rect = self.panel.geometry()
+        self.detector.set_geometry(rect.x(), rect.y(), width, height)
+        panel_cfg = self.cfg.raw.setdefault("panel", {})
+        panel_cfg["width"] = width
+        panel_cfg["height"] = height
+        try:
+            self.cfg.save()
+        except OSError:
+            pass
+
+    def _sync_detector(self) -> None:
+        rect = self.panel.geometry()
+        self.detector.set_geometry(rect.x(), rect.y(), rect.width(), rect.height())
 
     # ---------- 托盘 ----------
 

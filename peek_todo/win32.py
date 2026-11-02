@@ -40,3 +40,34 @@ def import_gui():
     import win32gui
 
     return win32gui, win32con
+
+
+def set_no_activate(window, enabled: bool) -> None:
+    """开关 WS_EX_NOACTIVATE：关掉之后窗口才能被点成前台、拿到键盘焦点。"""
+    try:
+        win32gui, win32con = import_gui()
+        hwnd = int(window.winId())
+        style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
+        if enabled:
+            style |= win32con.WS_EX_NOACTIVATE
+        else:
+            style &= ~win32con.WS_EX_NOACTIVATE
+        win32gui.SetWindowLong(hwnd, win32con.GWL_EXSTYLE, style | win32con.WS_EX_TOOLWINDOW)
+    except Exception:  # noqa: BLE001 - 拿不到样式也不能崩
+        pass
+
+
+def left_button_down() -> bool:
+    """左键此刻是否按着（用异步按键状态，不依赖窗口焦点）。"""
+    try:
+        return bool(ctypes.windll.user32.GetAsyncKeyState(0x01) & 0x8000)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def raise_foreground(window) -> None:
+    """把窗口提到前台。Qt 的 activateWindow 在被系统限制时不管用，补一刀。"""
+    try:
+        ctypes.windll.user32.SetForegroundWindow(int(window.winId()))
+    except Exception:  # noqa: BLE001
+        pass

@@ -62,6 +62,32 @@ def test_edge_hides_after_delay():
     assert not shown
 
 
+def test_edge_follows_dragged_panel_rect():
+    """用户拖过大小之后，命中区域要用真实矩形，而不是按屏幕推算的居中位置。"""
+    detector = EdgeDetector(panel_width=360, panel_height=400)
+    detector.set_geometry(1300, 100, 620, 760)
+
+    assert detector.panel_rect(SCREEN) == Rect(1300, 100, 620, 760)
+    # 面板上沿现在在 y=100，贴边高度范围要跟着走
+    assert detector.in_hot_zone((1919, 120), SCREEN)
+    assert not detector.in_hot_zone((1919, 900), SCREEN)
+    assert detector.in_panel((1400, 700), SCREEN)
+    assert not detector.in_panel((1400, 880), SCREEN)
+
+
+def test_pinned_click_distance():
+    """钉住时：贴近面板的点击不算"点到别处"，远处的才算。"""
+    from PyQt5.QtCore import QPoint, QRect
+
+    from peek_todo.app import far_from_panel
+
+    rect = QRect(1560, 200, 360, 600)  # 右边缘贴屏幕的默认位置
+    assert not far_from_panel(rect, QPoint(1800, 400))
+    assert not far_from_panel(rect, QPoint(1530, 400))  # 左边外扩 60px 内
+    assert far_from_panel(rect, QPoint(1400, 400))
+    assert far_from_panel(rect, QPoint(1800, 900))
+
+
 def test_week_view_picks_current_period():
     monday_afternoon = datetime(2026, 11, 2, 14, 0)
     view = build_view(_week_result(), monday_afternoon, PERIODS)
