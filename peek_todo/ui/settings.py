@@ -22,6 +22,7 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QPushButton,
     QRadioButton,
+    QAbstractItemView,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -124,6 +125,7 @@ class SettingsDialog(QDialog):
         self._source: dict = {}
         self._tree_root: Node | None = None
         self._node_by_item: dict[int, Node] = {}
+        self._restoring = False
 
         self._build_ui()
 
@@ -266,7 +268,7 @@ class SettingsDialog(QDialog):
 
     # ---------- 数据源 ----------
 
-    def _load(self, source: dict, display: str) -> None:
+    def _load(self, source: dict, display: str, quiet: bool = False) -> bool:
         try:
             fetcher = (
                 MarkdownSource(source["path"], recursive=source.get("recursive", True))
@@ -275,8 +277,11 @@ class SettingsDialog(QDialog):
             )
             result = fetcher.fetch()
         except SourceError as exc:
-            QMessageBox.warning(self, "读不到这个数据源", str(exc))
-            return
+            if quiet:
+                self.source_label.setText(f"{display}（读不到：{exc}）")
+            else:
+                QMessageBox.warning(self, "读不到这个数据源", str(exc))
+            return False
 
         self._source = source
         self.source_label.setText(display)
@@ -286,6 +291,7 @@ class SettingsDialog(QDialog):
         self._tree_root = result.tree
         self._fill_tree(result.tree)
         self.detect_label.setText("")
+        return True
 
     def _pick_file(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -365,6 +371,9 @@ class SettingsDialog(QDialog):
     # ---------- 检测 ----------
 
     def _on_select(self) -> None:
+        if self._restoring:
+            # 回填时保留用户原来的模式，不要被自动检测覆盖
+            return
         node = self._selected_node()
         if node is None:
             return
@@ -402,9 +411,10 @@ class SettingsDialog(QDialog):
         self._detect("hint", f"按「{MODE_LABELS[mode]}」解析：{result.task_count} 条事项")
 
     def _detect(self, kind: str, text: str) -> None:
+        colors = {"ok": "#6ee7a8", "warn": "#f0b45f", "hint": "#7c8391"}
         self.detect_label.setObjectName(kind)
         self.detect_label.setStyleSheet(
-            {"ok": "#6ee7a8", "warn": "#f0b45f", "hint": "#7c8391"}[kind] + "; font-size:12px;"
+            f"color:{colors.get(kind, '#7c8391')}; font-size:12px;"
         )
         self.detect_label.setText(text)
 
@@ -418,7 +428,7 @@ class SettingsDialog(QDialog):
     # ---------- 保存 ----------
 
     def prefill(self, config: dict | None) -> None:
-        """用现有配置回填：刷新间隔、强调色、开机自启。"""
+        """用现有配置回填：数据源、根节点、模式，以及刷新间隔/强调色/自启。"""
         config = config or {}
         behavior = {**DEFAULT_BEHAVIOR, **(config.get("behavior") or {})}
         panel = {**DEFAULT_PANEL, **(config.get("panel") or {})}
@@ -439,6 +449,58 @@ class SettingsDialog(QDialog):
         self.shortcut_check.setChecked(
             bool(behavior.get("desktopShortcut", True)) or shortcut.desktop_path().exists()
         )
+
+        # 数据源 + 之前选过的根节点：打开设置时直接定位到那儿
+        source = config.get("source") or {}
+        if source.get("type"):
+            display = source.get("path") or f"幕布 / {source.get('docId', '')}"
+            if self._load(source, display, quiet=True):
+                saved = (config.get("mapping") or {}).get("root_path") or []
+                self._select_path(saved)
+                mode = (config.get("mapping") or {}).get("mode")
+                radio = {
+                    MODE_WEEK: self.radio_week,
+                    MODE_DUE: self.radio_due,
+                    MODE_MEMO: self.radio_memo,
+                }.get(mode)
+                self._restoring = False
+                if radio is not None:
+                    radio.setChecked(True)
+                self._on_mode_changed()
+
+    def _select_path(self, path: list[str]) -> None:
+        """按 root_path 在树里定位并滚动到对应节点。"""
+        if not path:
+            return
+        self._restoring = True
+        item = None
+        for i in range(self.tree.topLevelItemCount()):
+            candidate = self.tree.topLevelItem(i)
+            if _node_text(candidate) == path[0]:
+                item = candidate
+                break
+        if item is None:
+            self._restoring = False
+            return
+        for name in path[1:]:
+            found = None
+            for j in range(item.childCount()):
+                child = item.child(j)
+                if _node_text(child) == name:
+                    found = child
+                    break
+            if found is None:
+                break
+            item = found
+
+        parent = item.parent()
+        while parent is not None:
+            parent.setExpanded(True)
+            parent = parent.parent()
+        self.tree.setCurrentItem(item)
+        item.setSelected(True)
+        self.tree.scrollToItem(item, QAbstractItemView.PositionAtCenter)
+        self.tree.setFocus()
 
     def _save(self):
         if not self._source:
@@ -462,7 +524,7 @@ class SettingsDialog(QDialog):
             },
             "vocabulary": {"weekdays": {}, "periods": {}},
             "periods": DEFAULT_PERIODS,
-            "panel": {**DEFAULT_PANEL, "accent": accent},
+            "panel": {**panel, "accent": accent},
             "behavior": {
                 **DEFAULT_BEHAVIOR,
                 "refreshMs": refresh_ms,
@@ -478,3 +540,8 @@ def _wrap(node: Node) -> Node:
     root = Node(id="settings-root", text=node.text)
     root.children = node.children
     return root
+
+
+def _node_text(item: QTreeWidgetItem) -> str:
+    """树里的显示文本（可能被截断加过省略号），用于和 root_path 比对。"""
+    return item.text(0).rstrip("…").strip()
