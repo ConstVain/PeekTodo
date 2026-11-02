@@ -44,9 +44,9 @@ class View:
 
 # 三种模式各自的强调色，UI 和报告都从这里取
 MODE_ACCENTS = {
-    "week": "#7aa2ff",  # 蓝
+    "week": "#4ade80",  # 绿
     "due": "#f0b45f",  # 琥珀
-    "memo": "#4ade80",  # 绿
+    "memo": "#7aa2ff",  # 蓝
 }
 
 # 用户在设置里可以覆盖成固定色（"auto" = 跟随模式）

@@ -23,9 +23,11 @@ from ..model import Task
 from ..win32 import raise_foreground, set_no_activate
 
 from ..selection import View
-from .theme import Theme, accent as theme_accent, get as get_theme
+from .theme import Theme, accent as theme_accent, body_font_family, get as get_theme
 
 ACCENT = "#7aa2ff"  # 兜底色，实际用 theme.accent()
+# 底部时间戳用的字体（得意黑，斜体）；没装就自动回落到系统默认
+TIMESTAMP_FONT = "'得意黑', 'Smiley Sans Oblique', 'Microsoft YaHei UI'"
 
 
 def card_qss(t: Theme) -> str:
@@ -72,7 +74,7 @@ QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: tran
 
 
 def _font(size: int, strike: bool = False) -> QFont:
-    font = QFont("Microsoft YaHei UI")
+    font = QFont(body_font_family())
     font.setPixelSize(size)
     font.setStrikeOut(strike)
     return font
@@ -344,6 +346,12 @@ class Panel(QWidget):
             if self._last_view is not None:
                 self.render(self._last_view, self._last_meta or {})
 
+    def abort_drag(self) -> None:
+        """兜底：鼠标已经松开但没收到 release（比如在别的窗口上松手）。"""
+        if self._dragging:
+            self._dragging = False
+            self.drag_finished.emit()
+
     def end_resize(self) -> None:
         if self._dragging:
             self._dragging = False
@@ -393,7 +401,8 @@ class Panel(QWidget):
         left.setSpacing(2)
         self.headline = QLabel("—")
         self.headline.setStyleSheet(
-            f"color:{self.theme.text}; font-size:17px; font-weight:600; background:transparent;"
+            f"color:{self.theme.text}; font-size:17px; font-weight:600;"
+            f"font-family:{TIMESTAMP_FONT}; background:transparent;"
         )
         self.meta = QLabel("—")
         self.meta.setStyleSheet(f"color:{self.theme.text_faint}; font-size:11px; background:transparent;")
@@ -465,7 +474,9 @@ class Panel(QWidget):
         self.dot = QLabel("●")
         self.dot.setStyleSheet(f"color:{self.theme.ok}; font-size:8px; background:transparent;")
         self.status = QLabel("正在读取…")
-        self.status.setStyleSheet(f"color:{self.theme.text_faint}; font-size:10px; background:transparent;")
+        self.status.setStyleSheet(
+            f"color:{self.theme.text_faint}; font-size:10px; font-weight:600; background:transparent;"
+        )
         self.status.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         # 状态放右下角：时间在前、来源在后
         foot.addStretch(1)
@@ -484,7 +495,8 @@ class Panel(QWidget):
         """把字号/间距按当前 scale 重新算一遍。"""
         px = self.px
         self.headline.setStyleSheet(
-            f"color:{self.theme.text}; font-size:{px(18)}px; font-weight:600; background:transparent;"
+            f"color:{self.theme.text}; font-size:{px(18)}px; font-weight:600;"
+            f"font-family:{TIMESTAMP_FONT}; background:transparent;"
         )
         self.meta.setStyleSheet(f"color:{self.theme.text_faint}; font-size:{px(11)}px; background:transparent;")
         self.clock.setStyleSheet(f"color:{self.theme.text_dim}; font-size:{px(12)}px; background:transparent;")
@@ -495,7 +507,10 @@ class Panel(QWidget):
             f"color:{self._accent}; font-size:{px(10)}px; letter-spacing:1px; background:transparent;"
         )
         self.counts.setStyleSheet(f"color:{self.theme.text_faint}; font-size:{px(10)}px; background:transparent;")
-        self.status.setStyleSheet(f"color:{self.theme.text_faint}; font-size:{px(10)}px; background:transparent;")
+        self.status.setStyleSheet(
+            f"color:{self.theme.text_faint}; font-size:{px(10)}px; font-weight:600;"
+            f"background:transparent;"
+        )
         self.dot.setStyleSheet(
             f"color:{self._dot_color()}; font-size:{px(8)}px; background:transparent;"
         )
@@ -622,7 +637,8 @@ class Panel(QWidget):
 
         chip = QLabel(label)
         chip.setStyleSheet(
-            f"color:{accent}; font-size:{self.px(10)}px; letter-spacing:0.4px;"
+            f"color:{accent}; font-size:{self.px(11)}px; letter-spacing:0.4px;"
+            f"font-family:{TIMESTAMP_FONT};"
             f"background: {self.theme.chip_bg}; border-radius:4px;"
             f"padding:{self.px(2)}px {self.px(7)}px;"
         )
@@ -631,7 +647,9 @@ class Panel(QWidget):
         return host
 
     def render(self, view: View, meta: dict):
-        accent = view.accent
+        # 浅色主题要把强调色压暗一档，这里必须过一遍 theme.accent()，
+        # 否则标签/竖条还是深色主题的原色
+        accent = theme_accent(self.theme, view.accent)
         self._last_view = view
         self._last_meta = meta
         self._accent = accent

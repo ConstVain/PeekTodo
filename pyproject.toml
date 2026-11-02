@@ -40,7 +40,7 @@ Issues = "https://github.com/ConstVain/PeekTodo/issues"
 packages = ["peek_todo", "peek_todo.sources", "peek_todo.ui"]
 
 [tool.setuptools.package-data]
-peek_todo = ["assets/*.png", "assets/*.ico"]
+peek_todo = ["assets/*.png", "assets/*.ico", "assets/fonts/*.ttf", "assets/fonts/*.otf"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

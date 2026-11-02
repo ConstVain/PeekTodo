@@ -453,7 +453,7 @@ class SettingsDialog(QDialog):
         accent = self.accent_combo.findData(panel.get("accent", "auto"))
         self.accent_combo.setCurrentIndex(max(0, accent))
 
-        theme_index = self.theme_combo.findData(panel.get("theme", "dark"))
+        theme_index = self.theme_combo.findData(panel.get("theme", "cream"))
         self.theme_combo.setCurrentIndex(max(0, theme_index))
 
         from .. import autostart, shortcut
@@ -536,7 +536,7 @@ class SettingsDialog(QDialog):
 
         refresh_ms = int(self.refresh_combo.currentData() or 5000)
         accent = self.accent_combo.currentData() or "auto"
-        theme_key = self.theme_combo.currentData() or "dark"
+        theme_key = self.theme_combo.currentData() or "cream"
 
         self.result_config = {
             "version": 1,

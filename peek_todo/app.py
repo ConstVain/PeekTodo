@@ -12,7 +12,7 @@ from functools import wraps
 from pathlib import Path
 
 from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QCursor, QIcon
+from PyQt5.QtGui import QCursor, QFont, QIcon
 from PyQt5.QtWidgets import QAction, QApplication, QMenu, QMessageBox, QSystemTrayIcon
 
 from . import autostart, shortcut
@@ -26,7 +26,7 @@ from .opener import open_source as open_source_item
 from .state import LocalState
 from .structure import map_document
 from .ui.panel import Panel
-from .ui.theme import get as get_theme
+from .ui.theme import body_font_family, get as get_theme, load_bundled_fonts
 from .ui.settings import SettingsDialog
 
 
@@ -125,7 +125,7 @@ class Runner:
             geo,
             animate_ms=int(panel_cfg["animateMs"]),
             manual_height=bool(panel_cfg.get("height")),
-            theme=get_theme(panel_cfg.get("theme")),
+            theme=get_theme(panel_cfg.get("theme"), panel_cfg.get("colors")),
         )
         self.panel.open_source_requested.connect(self.open_source)
         self.panel.task_toggled.connect(self.on_toggle)
@@ -199,6 +199,10 @@ class Runner:
         preset = ACCENT_PRESETS.get(self.cfg.panel.get("accent", "auto"))
         if preset:
             view.accent = preset
+        # config.json 里可以按模式覆盖强调色：panel.accents = {"week": "#..."}
+        custom = (self.cfg.panel.get("accents") or {}).get(view.mode)
+        if custom:
+            view.accent = custom
 
         # 内容没变就不重建控件——5 秒一次轮询时才不会闪
         signature = self._signature(view)
@@ -287,7 +291,11 @@ class Runner:
         if self.forced:
             return
         if self._dragging:
-            # 正在拖角落调大小：既不收回，也不解除钉住
+            # 正在拖角落调大小：既不收回，也不解除钉住。
+            # 但如果鼠标早就松了（松在别的窗口上），要自己恢复，否则面板会一直卡住不动
+            if not left_button_down():
+                self.panel.abort_drag()
+                self._dragging = False
             return
         if self.panel.is_pinned():
             # 钉住期间不自动收回；只在离面板够远的空白处单击一下才解除
@@ -387,7 +395,9 @@ class Runner:
         autostart.toggle(bool(dialog.result_config["behavior"].get("autostart")))
         _apply_desktop_shortcut(dialog.result_config)
         self.cfg = Config.load(config_path())
-        self.panel.set_theme(get_theme(self.cfg.panel.get("theme")))
+        self.panel.set_theme(
+            get_theme(self.cfg.panel.get("theme"), self.cfg.panel.get("colors"))
+        )
         self.rebuild()
         self.refresh()
 
@@ -412,8 +422,15 @@ def ensure_config(force: bool = False) -> Config | None:
     if path.exists():
         try:
             dialog.prefill(json.loads(path.read_text(encoding="utf-8-sig")))
-        except (OSError, ValueError):
-            pass
+        except (OSError, ValueError) as exc:
+            # 配置写坏了不要静默吞掉——用户会以为"设置丢了"
+            QMessageBox.warning(
+                None,
+                "config.json 读取失败",
+                f"{path}\n\n{exc}\n\n"
+                "多半是手改配置时漏了逗号或括号。修好再启动即可；"
+                "现在打开设置面板，保存会覆盖这个文件。",
+            )
     if dialog.exec_() != SettingsDialog.Accepted or not dialog.result_config:
         return None
     path.write_text(
@@ -545,6 +562,8 @@ def main(argv: list[str] | None = None) -> int:
 
     app = QApplication(sys.argv[:1])
     app.setQuitOnLastWindowClosed(False)
+    load_bundled_fonts()
+    app.setFont(QFont(body_font_family()))
     app.setApplicationName("PeekTodo")
 
     lock = None if "--force" in argv else _acquire_lock("--detached-child" in argv)

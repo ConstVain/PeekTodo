@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 
 @dataclass(frozen=True)
@@ -85,28 +85,104 @@ CREAM = Theme(
     divider="rgba(120, 100, 60, 0.14)",
     hover=(120, 100, 60, 20),
     scroll_handle="rgba(120, 100, 60, 70)",
-    ok="#2f8f4e",
-    warn="#b45309",
-    overdue="#c2410c",
+    ok="#4a8f63",
+    warn="#a5641c",
+    overdue="#b0452b",
     done_box="#b0a693",
     darken_accent=True,
 )
 
 THEMES = {DARK.key: DARK, CREAM.key: CREAM}
-DEFAULT_THEME = DARK
+DEFAULT_THEME = CREAM
 
-# 浅色底上把强调色压暗一档
+# 浅色底上把强调色压暗，并往暖里偏一点，配米白纸色。
+# 参考：MIUI/HarmonyOS 的浅色主题强调色都会降饱和，避免在低对比底上过艳。
 _LIGHT_ACCENTS = {
-    "#7aa2ff": "#3b6fd4",  # 周计划：蓝
-    "#f0b45f": "#b45309",  # 截止日：琥珀
-    "#4ade80": "#15803d",  # 备忘单：绿
-    "#a78bfa": "#6d4ad1",  # 雾紫
-    "#2dd4bf": "#0f766e",  # 青绿
+    "#7aa2ff": "#4f6f9f",  # 备忘单：石青（比纯蓝闷一档，米白上不刺眼）
+    "#f0b45f": "#96622a",  # 截止日：赭石
+    "#4ade80": "#4b7a5c",  # 周计划：苔绿（一眼看得出是绿，又不刺眼）
+    "#a78bfa": "#6a5b86",  # 雾紫
+    "#2dd4bf": "#3d6b66",  # 青绿
 }
 
 
-def get(key: str | None) -> Theme:
-    return THEMES.get((key or "").strip().lower(), DEFAULT_THEME)
+# 正文字体：按"现代手机厂商字体 > 思源/Noto > 系统雅黑"的顺序取第一个装了的
+BODY_FONT_CANDIDATES = (
+    "MiSans",
+    "HarmonyOS Sans SC",
+    "Noto Sans SC",
+    "Source Han Sans SC",
+    "PingFang SC",
+    "Microsoft YaHei UI",
+)
+
+_BUNDLED_FONTS = ("MiSans-Regular.ttf", "SmileySans-Oblique.otf")
+_body_family_cache: str | None = None
+
+
+def load_bundled_fonts() -> list[str]:
+    """把 assets/fonts 里的字体注册进 Qt，返回成功加载的字体族名。
+
+    这样即使系统没装 MiSans / 得意黑，渲染也是一致的。
+    需要在 QApplication 创建之后调用。
+    """
+    from pathlib import Path
+
+    from PyQt5.QtGui import QFontDatabase
+
+    folder = Path(__file__).resolve().parent.parent / "assets" / "fonts"
+    loaded: list[str] = []
+    if not folder.is_dir():
+        return loaded
+    for name in _BUNDLED_FONTS:
+        path = folder / name
+        if not path.exists():
+            continue
+        font_id = QFontDatabase.addApplicationFont(str(path))
+        if font_id >= 0:
+            loaded.extend(QFontDatabase.applicationFontFamilies(font_id))
+    return loaded
+
+
+def body_font_family() -> str:
+    """当前机器上可用的正文首选字体（需要在 QApplication 创建后调用）。"""
+    global _body_family_cache
+    if _body_family_cache:
+        return _body_family_cache
+    try:
+        from PyQt5.QtGui import QFontDatabase
+
+        installed = set(QFontDatabase().families())
+        for name in BODY_FONT_CANDIDATES:
+            if name in installed:
+                _body_family_cache = name
+                break
+    except Exception:  # noqa: BLE001 - 取不到就用系统默认
+        pass
+    if not _body_family_cache:
+        _body_family_cache = BODY_FONT_CANDIDATES[-1]
+    return _body_family_cache
+
+
+_OVERRIDABLE = {
+    name for name in Theme.__dataclass_fields__ if name not in ("key", "name", "darken_accent")
+}
+
+
+def get(key: str | None, overrides: dict | None = None) -> Theme:
+    """取主题；overrides 是 config.json 里 panel.colors 的字段覆盖。"""
+    base = THEMES.get((key or "").strip().lower(), DEFAULT_THEME)
+    if not overrides:
+        return base
+    clean = {k: v for k, v in overrides.items() if k in _OVERRIDABLE and isinstance(v, (str, int, tuple, list))}
+    if not clean:
+        return base
+    if "hover" in clean and isinstance(clean["hover"], list):
+        clean["hover"] = tuple(clean["hover"])
+    try:
+        return replace(base, **clean)
+    except TypeError:
+        return base
 
 
 def accent(theme: Theme, color: str) -> str:
