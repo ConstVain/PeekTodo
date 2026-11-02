@@ -12,7 +12,7 @@
 你有周计划，但不会为了看一眼今天该干什么去打开幕布或翻笔记。
 PeekTodo 把它贴在屏幕边缘，抬一下鼠标就能看到。
 
-**数据源**：本地 Markdown（`- [ ]` 列表）或幕布文档。
+**数据源**：本地 Markdown（列表）或幕布文档。
 **只读**：不修改你的文件；面板上的勾选只存在本地，7 天后自动失效。
 
 ## 快速开始
@@ -40,25 +40,13 @@ python -m peek_todo
 ```bash
 peektodo                    # 正常使用（托盘常驻）
 peektodo --setup            # 打开设置面板
-peektodo --force-shown      # 强制展开，调样式用
-peektodo --force            # 已有实例占着时强制再开一个
-peektodo --doctor           # 命令行体检（不转后台，直接看输出）
-peektodo --no-detach        # 留在前台，方便看日志
 ```
-
-不想开终端就双击仓库里的 `start.cmd`，它会用 `pythonw` 在后台启动。
 
 装成包之后，配置放在 `%APPDATA%\PeekTodo\`；直接跑源码时配置就在仓库根目录（便携）。
 
 ### 桌面快捷方式
 
 首次保存设置时会自动在桌面放一个 `PeekTodo` 快捷方式（带应用图标，点开就是后台常驻，没有黑框）。不想要就在设置面板取消「桌面快捷方式」，下次保存会删掉。
-
-想手动补一个：
-
-```bash
-powershell -ExecutionPolicy Bypass -File tools\install_shortcut.ps1
-```
 
 ### 更新
 
@@ -70,7 +58,7 @@ git pull
 python -m pip install --no-build-isolation --force-reinstall .   # 当初用 pip install -e . 装的就不用这行
 ```
 
-然后从托盘图标退出、重新启动。`config.json` 和 `.state.json` 都在 `.gitignore` 里，更新不会动你的配置和勾选状态。
+然后从托盘图标退出、重新启动。
 
 ## 怎么用
 
@@ -78,10 +66,9 @@ python -m pip install --no-build-isolation --force-reinstall .   # 当初用 pip
 |---|---|
 | 鼠标贴屏幕最右边 | 面板滑出 |
 | 鼠标移开 | 自动收回 |
-| **点一下面板** | 钉住：拿到焦点，鼠标移开也不收回 |
-| **拖左上角 / 左下角** | 调整面板大小，文字同步缩放；拖到面板外面也不会收回 |
+| **点一下面板** | 钉住：拿到焦点，鼠标移开也不收回，除非在别处单击一下 |
+| **拖左上角 / 左下角** | 调整面板大小，文字同步缩放 |
 | 点勾选框 | 勾选/取消（只改面板本地状态，不动源文件） |
-| 双击文字 | 用默认程序打开源文件 |
 | 离面板较远处单击 / Esc | 解除钉住并收回 |
 
 大小拖过之后会记住（写进 `config.json` 的 `panel.width` / `panel.height`），下次启动还是这个尺寸。

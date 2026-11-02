@@ -11,7 +11,7 @@ A todo panel that lives on the right edge of your screen. Move your mouse to the
 You have a weekly plan, but you are not going to open your notes app just to check what's next.
 PeekTodo pins it to the screen edge — one flick of the mouse and you know.
 
-**Sources**: local Markdown (`- [ ]` lists) or a Mubu document.
+**Sources**: local Markdown (lists) or a Mubu document.
 **Read-only**: it never modifies your files. Checkboxes on the panel are local and expire after 7 days.
 
 ## Quick start
@@ -39,23 +39,13 @@ Afterwards (when launched from a terminal it moves itself to the background, so 
 ```bash
 peektodo                 # normal use (tray resident)
 peektodo --setup         # reconfigure
-peektodo --force-shown   # keep the panel open, for tweaking styles
-peektodo --force         # start another instance even if one is already running
-peektodo --doctor        # print what the parser understood (stays in the foreground)
-peektodo --no-detach     # stay in the foreground for logs
 ```
 
 Installed as a package, config lives in `%APPDATA%\PeekTodo\`. Running from source keeps it in the repo root (portable).
 
-No terminal needed: double-click `start.cmd`, which launches it via `pythonw` in the background.
-
 ### Desktop shortcut
 
-Saving the settings for the first time drops a `PeekTodo` shortcut on your Desktop (app icon, starts in the background with no console). Uncheck “桌面快捷方式” in the settings to remove it. To recreate it by hand:
-
-```bash
-powershell -ExecutionPolicy Bypass -File tools\install_shortcut.ps1
-```
+Saving the settings for the first time drops a `PeekTodo` shortcut on your Desktop (app icon, starts in the background with no console). Uncheck “桌面快捷方式” in the settings to remove it.
 
 ### Updating
 
@@ -67,7 +57,7 @@ git pull
 python -m pip install --no-build-isolation --force-reinstall .   # skip if you installed with pip install -e .
 ```
 
-Then quit from the tray icon and start it again. `config.json` and `.state.json` are gitignored, so updating leaves your settings and checked items alone.
+Then quit from the tray icon and start it again.
 
 ## Using it
 
@@ -75,10 +65,9 @@ Then quit from the tray icon and start it again. `config.json` and `.state.json`
 |---|---|
 | Mouse to the far right edge | panel slides out |
 | Move away | slides back |
-| **Click the panel** | pins it: takes focus and stays while the mouse moves away |
-| **Drag the top-left / bottom-left corner** | resizes the panel, text scales with it; dragging outside the panel doesn't retract it |
+| **Click the panel** | pins it: takes focus and stays when the mouse moves away, unless you click somewhere else |
+| **Drag the top-left / bottom-left corner** | resizes the panel, text scales with it |
 | Click a checkbox | tick/untick (local to the panel, never touches the source file) |
-| Double-click a row's text | open the source file in your default editor |
 | Click far from the panel / Esc | unpin and retract |
 
 The size you drag to is remembered (`panel.width` / `panel.height` in `config.json`).
