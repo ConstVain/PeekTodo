@@ -30,7 +30,7 @@ python -m pip install -e .
 - 如果使用 **幕布**，先在幕布桌面端打开文档，让本机生成备份，再从 PeekTodo 的「幕布文档」列表里选择。
 
 <p align="center">
-  <img src="docs/screenshot-settings.png" alt="米白主题的 PeekTodo 设置窗口，显示数据源、结构树和强调色选项" width="820">
+  <img src="docs/screenshots/settings.png" alt="米白主题的 PeekTodo 设置窗口，显示数据源、结构树和强调色选项" width="820">
 </p>
 
 随时可以从托盘打开「设置…」。配色可在米白和深色之间切换。强调色可以跟随模式、选择预设色，或在「自定义…」中选色并添加到列表。列表里的颜色可以用右侧的垃圾桶删除。托盘里的「立即刷新」会重新读取当前数据源。
@@ -55,9 +55,9 @@ python -m pip install -e .
 <th width="33%">备忘单</th>
 </tr>
 <tr>
-<td><img src="docs/screenshot-panel.png" alt="周计划面板，上方显示当前时段，下方显示当天全部安排"></td>
-<td><img src="docs/screenshot-due.png" alt="截止日面板，逾期事项标红，下方显示即将到期的事项"></td>
-<td><img src="docs/screenshot-memo.png" alt="备忘单面板，按顺序显示所有事项"></td>
+<td><img src="docs/screenshots/weekly-plan.png" alt="周计划面板，上方显示当前时段，下方显示当天全部安排"></td>
+<td><img src="docs/screenshots/deadlines.png" alt="截止日面板，逾期事项标红，下方显示即将到期的事项"></td>
+<td><img src="docs/screenshots/memo.png" alt="备忘单面板，按顺序显示所有事项"></td>
 </tr>
 <tr>
 <td>根节点下按时段分组，例如 <code>周一下午</code>。上方是当前时段，下方是当天全部安排。</td>

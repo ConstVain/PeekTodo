@@ -30,7 +30,7 @@ In Settings, choose a source and mode, leave **Desktop shortcut** checked, and c
 - **Mubu**. Open the document in the Mubu desktop app so it has a local backup, then select it from the Mubu document list in PeekTodo.
 
 <p align="center">
-  <img src="docs/screenshot-settings.png" alt="PeekTodo Settings in Cream, with the data source, structure tree, and accent controls" width="820">
+  <img src="docs/screenshots/settings.png" alt="PeekTodo Settings in Cream, with the data source, structure tree, and accent controls" width="820">
 </p>
 
 Reopen Settings from the tray. Choose Cream or Dark, and let the accent follow the current mode, choose a preset, or pick a custom color and add it to the list. Use the trash icon to remove a color. **Refresh now** in the tray menu rereads the current source.
@@ -55,9 +55,9 @@ Reopen Settings from the tray. Choose Cream or Dark, and let the accent follow t
 <th width="33%">Memo</th>
 </tr>
 <tr>
-<td><img src="docs/screenshot-panel.png" alt="Weekly plan with the current slot above all of today's tasks"></td>
-<td><img src="docs/screenshot-due.png" alt="Deadline panel with overdue items in red and upcoming deadlines below"></td>
-<td><img src="docs/screenshot-memo.png" alt="Memo panel showing all items in order"></td>
+<td><img src="docs/screenshots/weekly-plan.png" alt="Weekly plan with the current slot above all of today's tasks"></td>
+<td><img src="docs/screenshots/deadlines.png" alt="Deadline panel with overdue items in red and upcoming deadlines below"></td>
+<td><img src="docs/screenshots/memo.png" alt="Memo panel showing all items in order"></td>
 </tr>
 <tr>
 <td>Group items by time slot, such as <code>周一下午</code> (Monday afternoon). The current slot appears above the rest of today's plan.</td>
