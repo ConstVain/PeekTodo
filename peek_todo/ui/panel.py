@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from PyQt5.QtCore import QEasingCurve, QEvent, QPoint, QPropertyAnimation, Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QColor, QFont, QPainter
 from PyQt5.QtWidgets import (
@@ -13,8 +15,10 @@ from PyQt5.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QScrollArea,
     QSizePolicy,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -23,6 +27,7 @@ from ..domain.model import Task
 from ..windows.win32 import raise_foreground, set_no_activate
 
 from ..domain.selection import View
+from ..domain.structure import MODE_LABELS
 from .theme import MODE_ACCENTS, Theme, accent as theme_accent, body_font_family, get as get_theme
 
 ACCENT = "#7aa2ff"  # 兜底色，实际用 theme.accent()
@@ -224,8 +229,17 @@ class TaskRow(QWidget):
             self.toggled.emit(self.task.id, not self.task.done)
 
 
+@dataclass(frozen=True)
+class PanelSection:
+    title: str
+    view: View
+    accent: str
+
+
 class Panel(QWidget):
     task_toggled = pyqtSignal(str, bool)
+    add_section_requested = pyqtSignal()
+    remove_section_requested = pyqtSignal(int)
     height_changed = pyqtSignal(int)
     resized = pyqtSignal(int, int)
     pinned_changed = pyqtSignal(bool)
@@ -258,6 +272,7 @@ class Panel(QWidget):
         self._pinned = False
         self._content_key = None
         self._accent_override = None
+        self._sections: tuple[PanelSection, ...] = ()
         self._last_view = None
         self._last_meta = None
         self._animate_ms = animate_ms
@@ -410,25 +425,40 @@ class Panel(QWidget):
         head.addWidget(self.clock)
         root.addLayout(head)
 
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QFrame.NoFrame)
+        self.scroll.setStyleSheet(scroll_qss(self.theme))
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Ignored)
+        self.content_host = QWidget()
+        self.content_host.setStyleSheet("background: transparent;")
+        content = QVBoxLayout(self.content_host)
+        content.setContentsMargins(0, 0, 0, 0)
+        content.setSpacing(0)
+        content.setSizeConstraint(QLayout.SetMinimumSize)
+        self.scroll.setWidget(self.content_host)
+        root.addWidget(self.scroll, 1)
+
         self.current_block = QFrame()
         self.current_block.setObjectName("currentBlock")
         self.current_block.setStyleSheet(current_block_qss(self.theme, theme_accent(self.theme, ACCENT)))
         self.current_box = QVBoxLayout(self.current_block)
         self.current_box.setContentsMargins(10, 9, 10, 9)
         self.current_box.setSpacing(7)
-        root.addWidget(self.current_block)
+        content.addWidget(self.current_block)
 
         self.unknown_label = QLabel("未识别时间")
         self.unknown_label.setStyleSheet(
             f"color:{self.theme.text_faint}; font-size:10px; background:transparent; margin-bottom:2px;"
         )
         self.unknown_label.hide()
-        root.addWidget(self.unknown_label)
+        content.addWidget(self.unknown_label)
 
         self.unknown_box = QVBoxLayout()
         self.unknown_box.setContentsMargins(0, 0, 0, 10)
         self.unknown_box.setSpacing(5)
-        root.addLayout(self.unknown_box)
+        content.addLayout(self.unknown_box)
 
         self.divider_widget = QWidget()
         self.divider_widget.setStyleSheet("background: transparent;")
@@ -447,21 +477,18 @@ class Panel(QWidget):
         divider.addWidget(line, 1)
         divider.addWidget(self.section_label)
         divider.addWidget(self.counts)
-        root.addWidget(self.divider_widget)
+        content.addWidget(self.divider_widget)
 
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.scroll.setFrameShape(QFrame.NoFrame)
-        self.scroll.setStyleSheet(scroll_qss(self.theme))
-        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.all_host = QWidget()
         self.all_host.setStyleSheet("background: transparent;")
         self.all_box = QVBoxLayout(self.all_host)
         self.all_box.setContentsMargins(0, 0, 4, 0)
         self.all_box.setSpacing(1)
-        self.all_box.addStretch(1)
-        self.scroll.setWidget(self.all_host)
-        root.addWidget(self.scroll, 1)
+        content.addWidget(self.all_host)
+        self.sections_box = QVBoxLayout()
+        self.sections_box.setSpacing(0)
+        content.addLayout(self.sections_box)
+        content.addStretch(1)
 
         foot = QHBoxLayout()
         foot.setContentsMargins(0, 8, 0, 0)
@@ -473,6 +500,9 @@ class Panel(QWidget):
             f"color:{self.theme.text_faint}; font-size:10px; font-weight:600; background:transparent;"
         )
         self.status.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.add_section_button = self._section_button("+", "添加面板区块")
+        self.add_section_button.clicked.connect(self.add_section_requested.emit)
+        foot.addWidget(self.add_section_button, 0, Qt.AlignVCenter)
         # 状态放右下角：时间在前、来源在后
         foot.addStretch(1)
         foot.addWidget(self.status)
@@ -509,6 +539,7 @@ class Panel(QWidget):
         self.dot.setStyleSheet(
             f"color:{self._dot_color()}; font-size:{px(8)}px; background:transparent;"
         )
+        self._style_section_button(self.add_section_button, self._accent)
         layout = self.card.layout()
         if layout is not None:
             layout.setContentsMargins(px(18), px(14), px(14), px(10))
@@ -595,7 +626,26 @@ class Panel(QWidget):
             item = layout.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                widget.hide()
                 widget.deleteLater()
+
+    @staticmethod
+    def _section_button(text: str, label: str) -> QToolButton:
+        button = QToolButton()
+        button.setText(text)
+        button.setToolTip(label)
+        button.setAccessibleName(label)
+        button.setCursor(Qt.PointingHandCursor)
+        return button
+
+    def _style_section_button(self, button: QToolButton, accent: str) -> None:
+        button.setFixedSize(self.px(16), self.px(18))
+        button.setStyleSheet(
+            f"QToolButton {{ color:{self.theme.text_dim}; background:transparent; "
+            f"border:0; padding:0; font-size:{self.px(15)}px; }}"
+            f"QToolButton:hover, QToolButton:focus {{ color:{accent}; "
+            f"background:{self.theme.chip_bg}; border-radius:3px; }}"
+        )
 
     def _row(self, task: Task, *, small=False, muted=False, accent=ACCENT, overdue=False):
         row = TaskRow(
@@ -640,18 +690,28 @@ class Panel(QWidget):
         row.addStretch(1)
         return host
 
-    def present(self, view: View, meta: dict, accent_override: str | None = None) -> None:
+    @staticmethod
+    def _view_key(view: View) -> tuple:
         def rows(tasks):
             return tuple((task.id, task.text, task.done, task.depth) for task in tasks)
 
-        key = (
+        return (
             view.headline, view.now.date(), view.mode, view.open_count, view.done_count,
-            view.show_bottom, view.section_label, view.unknown_label, view.overdue_ids,
+            view.show_bottom, view.section_label, view.unknown_label, view.overdue_ids, view.note,
             rows(view.current), rows(view.unknown),
             tuple((group.label, rows(group.tasks)) for group in view.today_groups),
-            accent_override,
+        )
+
+    def present(
+        self, view: View, meta: dict, accent_override: str | None = None,
+        sections: tuple[PanelSection, ...] = (),
+    ) -> None:
+        key = (
+            self._view_key(view), accent_override,
+            tuple((section.title, section.accent, self._view_key(section.view)) for section in sections),
         )
         self._accent_override = accent_override
+        self._sections = sections
         if self._content_key != key:
             self.render(view, meta)
             self._content_key = key
@@ -659,6 +719,77 @@ class Panel(QWidget):
             self._last_view = view
             self._last_meta = meta
             self._render_status(view, meta)
+
+    def _render_current(self, layout: QVBoxLayout, view: View, accent: str) -> None:
+        for task in view.current:
+            layout.addWidget(self._row(task, accent=accent, overdue=task.id in view.overdue_ids))
+        if not view.current:
+            message = "还没有任何事项" if view.mode == "memo" else "这个时间段没有安排"
+            layout.addWidget(self._hint(message))
+
+    def _render_groups(self, layout: QVBoxLayout, view: View, accent: str) -> None:
+        groups = [group for group in view.today_groups if group.tasks]
+        for index, group in enumerate(groups):
+            layout.addWidget(self._group_header(group.label, accent, first=index == 0))
+            for task in group.tasks:
+                layout.addWidget(
+                    self._row(task, small=True, accent=accent, overdue=task.id in view.overdue_ids)
+                )
+        if not groups:
+            layout.addWidget(self._hint("上面已经列全了" if view.current else "今天没有安排"))
+
+    def _section_widget(self, section: PanelSection, index: int) -> QWidget:
+        view = section.view
+        host = QWidget()
+        host.setObjectName("extraSection")
+        layout = QVBoxLayout(host)
+        layout.setContentsMargins(0, self.px(18), 0, 0)
+        layout.setSpacing(self.px(5))
+
+        line = QFrame()
+        line.setFixedHeight(max(2, round(2 * self._scale)))
+        line.setStyleSheet(f"background:{self.theme.text_faint};")
+        layout.addWidget(line)
+        layout.addSpacing(self.px(5))
+
+        header = QHBoxLayout()
+        title = QLabel(section.title)
+        title.setTextFormat(Qt.PlainText)
+        title.setWordWrap(True)
+        title.setStyleSheet(
+            f"color:{section.accent}; font-size:{self.px(15)}px; font-weight:600;"
+        )
+        header.addWidget(title, 1)
+        remove = self._section_button("−", f"移除区块「{section.title}」")
+        remove.setObjectName("removeSection")
+        self._style_section_button(remove, section.accent)
+        remove.clicked.connect(lambda _checked=False: self.remove_section_requested.emit(index))
+        header.addWidget(remove, 0, Qt.AlignTop)
+        layout.addLayout(header)
+
+        context = MODE_LABELS[view.mode]
+        if view.headline != context:
+            context += f" · {view.headline}"
+        context += f" · 未完成 {view.open_count} / 已完成 {view.done_count}"
+        layout.addWidget(self._hint(context))
+
+        current = QFrame()
+        current.setObjectName("currentBlock")
+        current.setStyleSheet(current_block_qss(self.theme, section.accent))
+        current_box = QVBoxLayout(current)
+        current_box.setContentsMargins(self.px(10), self.px(9), self.px(9), self.px(9))
+        current_box.setSpacing(self.px(7))
+        self._render_current(current_box, view, section.accent)
+        layout.addWidget(current)
+
+        if view.unknown:
+            layout.addWidget(self._hint(view.unknown_label))
+            for task in view.unknown:
+                layout.addWidget(self._row(task, small=True, muted=True, accent=section.accent))
+        if view.show_bottom:
+            layout.addWidget(self._hint(view.section_label))
+            self._render_groups(layout, view, section.accent)
+        return host
 
     def render(self, view: View, meta: dict):
         accent = self._accent_override or theme_accent(self.theme, MODE_ACCENTS[view.mode])
@@ -672,19 +803,7 @@ class Panel(QWidget):
         self._restyle()
 
         self._clear(self.current_box)
-        if view.current:
-            for task in view.current:
-                self.current_box.addWidget(
-                    self._row(
-                        task,
-                        accent=accent,
-                        overdue=task.id in view.overdue_ids,
-                    )
-                )
-        elif view.mode == "memo":
-            self.current_box.addWidget(self._hint("还没有任何事项"))
-        else:
-            self.current_box.addWidget(self._hint("这个时间段没有安排"))
+        self._render_current(self.current_box, view, accent)
 
         self._clear(self.unknown_box)
         self.unknown_label.setText(view.unknown_label)
@@ -693,34 +812,16 @@ class Panel(QWidget):
             self.unknown_box.addWidget(self._row(task, small=True, muted=True, accent=accent))
 
         self._clear(self.all_box)
-        if view.today_groups:
-            shown = 0
-            for group in view.today_groups:
-                if not group.tasks:
-                    continue
-                self.all_box.addWidget(self._group_header(group.label, accent, first=shown == 0))
-                shown += 1
-                for task in group.tasks:
-                    self.all_box.addWidget(
-                        self._row(
-                            task,
-                            small=True,
-                            accent=accent,
-                            overdue=task.id in view.overdue_ids,
-                        )
-                    )
-        elif view.current:
-            self.all_box.addWidget(self._hint("上面已经列全了"))
-        else:
-            self.all_box.addWidget(self._hint("今天没有安排"))
-        self.all_box.addStretch(1)
+        self._clear(self.sections_box)
+        if view.show_bottom:
+            self._render_groups(self.all_box, view, accent)
+        for index, section in enumerate(self._sections):
+            self.sections_box.addWidget(self._section_widget(section, index))
 
         self.section_label.setText(view.section_label)
         self.counts.setText(f"未完成 {view.open_count} / 已完成 {view.done_count}")
-
-        # 备忘单模式没有下方列表：把统计挪到状态行
         self.divider_widget.setVisible(view.show_bottom)
-        self.scroll.setVisible(view.show_bottom)
+        self.all_host.setVisible(view.show_bottom)
 
         self._render_status(view, meta)
         QTimer.singleShot(0, self.fit_height)
@@ -750,7 +851,7 @@ class Panel(QWidget):
         self._clear(self.unknown_box)
         self.unknown_label.hide()
         self._clear(self.all_box)
-        self.all_box.addStretch(1)
+        self._clear(self.sections_box)
         self.counts.setText("")
         self.dot.setStyleSheet(
             f"color:{self._dot_color()}; font-size:{self.px(8)}px; background:transparent;"
@@ -764,11 +865,10 @@ class Panel(QWidget):
             # 用户手动调过大小：高度由用户说了算，内容多了走滚动
             self.card.setGeometry(0 if self._shown else self._width, 0, self._width, self._height)
             return
-        self.all_host.adjustSize()
-        content = self.all_host.sizeHint().height()
-        self.scroll.setFixedHeight(max(28, min(content, self.px(380))))
+        content = self.content_host.layout()
+        content.activate()
         self.card.layout().activate()
-        wanted = self.card.layout().sizeHint().height()
+        wanted = self.card.layout().sizeHint().height() + content.sizeHint().height()
         target = max(self._min_h, min(wanted, self._max_h))
         if target == self._height:
             return

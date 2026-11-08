@@ -1,5 +1,7 @@
 """Translate stored settings into task-mapping options and a source adapter."""
 
+from dataclasses import replace
+
 from ..domain.structure import MappingConfig
 from ..domain.vocabulary import Vocabulary
 from ..sources.base import Source, SourceError
@@ -31,4 +33,11 @@ def build_mapping(cfg: Config) -> MappingConfig:
         mode=(raw.get("mode") or "A").upper(),
         aliases=raw.get("aliases") or {},
         vocabulary=Vocabulary.from_config(cfg.vocabulary),
+    )
+
+
+def build_section_mappings(cfg: Config, primary: MappingConfig) -> tuple[MappingConfig, ...]:
+    return tuple(
+        replace(primary, root_path=section["root_path"], mode=section["mode"])
+        for section in cfg.sections
     )

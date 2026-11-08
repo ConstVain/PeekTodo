@@ -538,3 +538,100 @@ def test_shortcut_icon_path_changes_only_when_icon_bytes_change(tmp_path, monkey
     assert updated != first
     assert updated.read_bytes() == b"new icon"
     assert shortcut.icon_path() == updated
+
+def test_panel_plus_appends_and_persists_sections(tmp_path, monkeypatch):
+    from PyQt5.QtCore import QCoreApplication, QEvent, QPoint, Qt
+    from PyQt5.QtTest import QTest
+    from PyQt5.QtWidgets import QApplication, QPushButton, QSystemTrayIcon, QToolButton
+
+    from peek_todo.ui import desktop, settings
+    from peek_todo.ui.panel import TaskRow
+    from peek_todo.windows import shortcut
+
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setattr(QSystemTrayIcon, "show", lambda self: None)
+    monkeypatch.setattr(desktop.autostart, "is_enabled", lambda: False)
+    monkeypatch.setattr(shortcut, "desktop_path", lambda: tmp_path / "absent.lnk")
+    monkeypatch.setattr(settings, "user_data_dir", lambda: tmp_path / "profile")
+    state_file = tmp_path / ".state.json"
+    monkeypatch.setattr(desktop, "state_path", lambda: state_file)
+    monkeypatch.setattr(desktop, "save_settings", Config.save)
+    app = QApplication.instance() or QApplication([])
+    doc = tmp_path / "plan.md"
+    doc.write_text(
+        "# 计划\n## 主清单\n- 原事项\n"
+        "## 截止安排\n- 今天\n  - 今日任务\n- 明天\n  - 明日任务\n"
+        "## 备忘安排\n- 备忘任务\n",
+        encoding="utf-8",
+    )
+    cfg = Config(tmp_path / "config.json", {
+        "source": {"type": "markdown", "path": doc.name},
+        "mapping": {"root_path": ["计划", "主清单"], "mode": "memo"},
+        "panel": {"height": 230},
+    })
+    cfg.save()
+    selections = [("截止安排", "radio_due"), ("备忘安排", "radio_memo")]
+
+    def configure_dialog(dialog):
+        if selections:
+            title, radio = selections.pop(0)
+            item, = dialog.tree.findItems(title, Qt.MatchExactly | Qt.MatchRecursive)
+            dialog.tree.setCurrentItem(item)
+            getattr(dialog, radio).setChecked(True)
+        else:
+            dialog.sections_combo.setCurrentIndex(0)
+            remove = next(button for button in dialog.findChildren(QPushButton)
+                          if button.text() == "移除区块")
+            remove.click()
+        dialog.findChild(QPushButton, "primary").click()
+        return dialog.result()
+
+    monkeypatch.setattr(desktop.SettingsDialog, "exec_", configure_dialog)
+    controller = desktop.DesktopController(app, cfg, force_shown=True)
+    try:
+        panel = controller.panel
+        for _ in range(2):
+            QTest.mouseClick(panel.add_section_button, Qt.LeftButton)
+            app.processEvents()
+        saved = Config.load(cfg.path)
+        assert saved.mapping["root_path"] == ["计划", "主清单"]
+        assert saved.mapping["mode"] == "memo"
+        assert saved.sections == [
+            {"root_path": ["计划", "截止安排"], "mode": "due"},
+            {"root_path": ["计划", "备忘安排"], "mode": "memo"},
+        ]
+        assert panel.sections_box.count() == 2
+        assert panel.scroll.verticalScrollBar().maximum() > 0
+
+        due_block = panel.sections_box.itemAt(0).widget()
+        due_row = next(row for row in due_block.findChildren(TaskRow) if row.task.text == "今日任务")
+        panel.scroll.ensureWidgetVisible(due_row)
+        QTest.mouseClick(due_row, Qt.LeftButton, pos=QPoint(3, 8))
+        restored = TaskSession(saved, state_file).refresh(datetime.now())
+        assert [section.view.mode for section in restored.sections] == ["due", "memo"]
+        assert restored.sections[0].view.current[0].done
+        assert restored.view.current[0].text == "原事项"
+
+        # Removing a section also works with the last displayed data when the source is unavailable.
+        original = doc.read_bytes()
+        doc.unlink()
+        remove_button = panel.sections_box.itemAt(0).widget().findChild(QToolButton, "removeSection")
+        panel.scroll.ensureWidgetVisible(remove_button)
+        QTest.mouseClick(remove_button, Qt.LeftButton)
+        assert Config.load(cfg.path).sections == [{"root_path": ["计划", "备忘安排"], "mode": "memo"}]
+        assert panel.sections_box.count() == 1
+        assert controller.session.last_view.current[0].text == "原事项"
+        assert controller.session.last_sections[0].title == "备忘安排"
+        assert panel._level == "error"
+        doc.write_bytes(original)
+
+        controller.rerun_wizard()
+        assert not Config.load(cfg.path).sections
+        assert panel.sections_box.count() == 0
+    finally:
+        for timer in (controller.tick_timer, controller.refresh_timer, controller.clock_timer):
+            timer.stop()
+        controller.panel.close()
+        controller.panel.deleteLater()
+        controller.tray.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)

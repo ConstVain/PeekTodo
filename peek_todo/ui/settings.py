@@ -28,6 +28,7 @@ from PyQt5.QtWidgets import (
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
+    QWidget,
 )
 
 from ..application.configuration import build_source
@@ -51,6 +52,7 @@ from ..domain.structure import (
     MODE_WEEK,
     MappingConfig,
     map_document,
+    normalize_mode,
 )
 
 PRESET_NAMES = {"blue": "湖蓝", "violet": "雾紫", "teal": "青绿"}
@@ -159,10 +161,12 @@ class Section(QFrame):
 class SettingsDialog(QDialog):
     theme_selected = pyqtSignal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, *, add_section: bool = False):
         super().__init__(parent)
-        self.setWindowTitle("PeekTodo 设置")
-        self.resize(760, 720)
+        self._add_section = add_section
+        self._sections: list[dict] = []
+        self.setWindowTitle("PeekTodo 设置 · 添加区块" if add_section else "PeekTodo 设置")
+        self.resize(760, 500 if add_section else 720)
         self.result_config: dict | None = None
 
         self._source: dict = {}
@@ -205,19 +209,23 @@ class SettingsDialog(QDialog):
         root.setContentsMargins(22, 20, 22, 18)
         root.setSpacing(14)
 
-        title = QLabel("PeekTodo 设置")
+        title = QLabel("添加面板区块" if self._add_section else "PeekTodo 设置")
         title.setObjectName("title")
         root.addWidget(title)
 
-        root.addWidget(self._source_section())
+        source = self._source_section()
+        root.addWidget(source)
+        source.setHidden(self._add_section)
         root.addWidget(self._structure_section(), 1)
-        root.addWidget(self._appearance_section())
+        appearance = self._appearance_section()
+        root.addWidget(appearance)
+        appearance.setHidden(self._add_section)
 
         bottom = QHBoxLayout()
         bottom.addStretch(1)
         btn_cancel = QPushButton("取消")
         btn_cancel.setObjectName("ghost")
-        btn_save = QPushButton("保存")
+        btn_save = QPushButton("添加" if self._add_section else "保存")
         btn_save.setObjectName("primary")
         btn_save.setDefault(True)
         btn_cancel.clicked.connect(self.reject)
@@ -273,7 +281,10 @@ class SettingsDialog(QDialog):
         self.tree.itemSelectionChanged.connect(self._on_select)
         section.body.addWidget(self.tree, 1)
 
-        hint = QLabel("在树里点一个节点，作为解析的起点")
+        hint = QLabel(
+            "从当前数据源选择一个节点，新区块会显示在面板底部"
+            if self._add_section else "在树里点一个节点，作为解析的起点"
+        )
         hint.setObjectName("hint")
         section.body.addWidget(hint)
 
@@ -295,7 +306,34 @@ class SettingsDialog(QDialog):
         self.detect_label.setObjectName("hint")
         self.detect_label.setWordWrap(True)
         section.body.addWidget(self.detect_label)
+
+        self.sections_row = QWidget()
+        row = QHBoxLayout(self.sections_row)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addWidget(self._plain("附加区块"))
+        self.sections_combo = QComboBox()
+        self.sections_combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.sections_combo.setMinimumContentsLength(14)
+        row.addWidget(self.sections_combo, 1)
+        remove = QPushButton("移除区块")
+        remove.clicked.connect(self._remove_section)
+        row.addWidget(remove)
+        section.body.addWidget(self.sections_row)
+        self.sections_row.hide()
         return section
+
+    def _show_sections(self) -> None:
+        self.sections_combo.clear()
+        for section in self._sections:
+            mode = MODE_LABELS[normalize_mode(section.get("mode"))]
+            self.sections_combo.addItem(f"{section['root_path'][-1]} · {mode}")
+        self.sections_row.setVisible(bool(self._sections) and not self._add_section)
+
+    def _remove_section(self) -> None:
+        index = self.sections_combo.currentIndex()
+        if index >= 0:
+            self._sections.pop(index)
+            self._show_sections()
 
     def _appearance_section(self) -> Section:
         section = Section("显示与行为")
@@ -448,6 +486,13 @@ class SettingsDialog(QDialog):
                 QMessageBox.warning(self, "读不到这个数据源", str(exc))
             return False
 
+        if self._source:
+            previous = Config(cfg.path, {"source": self._source})
+            previous_source = previous.resolved_source()
+            current_source = cfg.resolved_source()
+            if any(previous_source.get(key) != current_source.get(key) for key in ("type", "path", "docId")):
+                self._sections.clear()
+                self._show_sections()
         self._source = source
         self._markdown_path = path
         self._markdown_revision = revision
@@ -562,6 +607,7 @@ class SettingsDialog(QDialog):
         if len(text) > 44:
             text = text[:43] + "…"
         item = QTreeWidgetItem([text])
+        item.setData(0, Qt.UserRole, node.text)
         self._node_by_item[id(item)] = node
         if depth < 3:
             for child in node.children[:60]:
@@ -575,7 +621,7 @@ class SettingsDialog(QDialog):
         path: list[str] = []
         item: QTreeWidgetItem | None = items[0]
         while item is not None:
-            path.append(item.text(0).rstrip("…"))
+            path.append(_node_text(item))
             item = item.parent()
         return list(reversed(path))
 
@@ -648,6 +694,8 @@ class SettingsDialog(QDialog):
         self._original = config
         if config_dir is not None:
             self._config_dir = config_dir
+        self._sections = Config(self._config_dir / "config.json", config).sections
+        self._show_sections()
 
         index = self.refresh_combo.findData(int(behavior.get("refreshMs", 5000)))
         if index < 0:
@@ -676,7 +724,7 @@ class SettingsDialog(QDialog):
         source = config.get("source") or {}
         if source.get("type"):
             display = source.get("path") or f"幕布 / {source.get('docId', '')}"
-            if self._load(source, display, quiet=True):
+            if self._load(source, display, quiet=not self._add_section) and not self._add_section:
                 saved = (config.get("mapping") or {}).get("root_path") or []
                 self._select_path(saved)
                 mode = (config.get("mapping") or {}).get("mode")
@@ -745,17 +793,31 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(self, "还没选根节点", "在中间的树里点一个节点，作为解析起点。")
             return
 
+        mapping = dict(self._original.get("mapping") or {})
+        mode = self._selected_mode()
+        if self._add_section:
+            if any(
+                section.get("root_path") == path and normalize_mode(section.get("mode")) == mode
+                for section in [mapping, *self._sections]
+            ):
+                QMessageBox.information(self, "区块已存在", "这个节点已经用同样的模式显示在面板上。")
+                return
+            mapping["sections"] = [*self._sections, {"root_path": path, "mode": mode}]
+            self.result_config = {**self._original, "mapping": mapping}
+            self.accept()
+            return
+
+        mapping.update(root_path=path, mode=mode)
+        if self._sections or "sections" in mapping:
+            mapping["sections"] = list(self._sections)
+
         refresh_ms = int(self.refresh_combo.currentData() or 5000)
 
         self.result_config = {
             **self._original,
             "version": self._original.get("version", 1),
             "source": self._source,
-            "mapping": {
-                **(self._original.get("mapping") or {}),
-                "root_path": path,
-                "mode": self._selected_mode(),
-            },
+            "mapping": mapping,
             "panel": self._panel_preferences(),
             "behavior": {
                 **(self._original.get("behavior") or {}),
@@ -775,5 +837,4 @@ def _wrap(node: Node) -> Node:
 
 
 def _node_text(item: QTreeWidgetItem) -> str:
-    """树里的显示文本（可能被截断加过省略号），用于和 root_path 比对。"""
-    return item.text(0).rstrip("…").strip()
+    return (item.data(0, Qt.UserRole) or item.text(0)).strip()

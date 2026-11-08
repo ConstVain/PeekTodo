@@ -18,7 +18,7 @@ from ..storage.config import Config
 from ..storage.paths import assets_dir, state_path
 from ..windows import autostart
 from ..windows.win32 import left_button_down, set_no_activate
-from .panel import Panel
+from .panel import Panel, PanelSection
 from .settings import SettingsDialog
 from .settings_flow import save_settings
 from .theme import get as get_theme, panel_accent
@@ -71,6 +71,8 @@ class DesktopController:
             theme=get_theme(panel_cfg.get("theme"), panel_cfg.get("colors")),
         )
         self.panel.task_toggled.connect(self.on_toggle)
+        self.panel.add_section_requested.connect(self.add_section)
+        self.panel.remove_section_requested.connect(self.remove_section)
         self.panel.show()
         set_no_activate(self.panel, True)
 
@@ -118,7 +120,11 @@ class DesktopController:
         else:
             panel_cfg = self.cfg.panel
             color = panel_accent(self.panel.theme, panel_cfg, snapshot.view.mode)
-            self.panel.present(snapshot.view, snapshot.meta, color)
+            sections = tuple(
+                PanelSection(section.title, section.view, panel_accent(self.panel.theme, panel_cfg, section.view.mode))
+                for section in snapshot.sections
+            )
+            self.panel.present(snapshot.view, snapshot.meta, color, sections)
 
     def update_clock(self) -> None:
         self.panel.clock.setText(datetime.now().strftime("%H:%M"))
@@ -243,18 +249,45 @@ class DesktopController:
         self.panel.set_theme(get_theme(theme_key, panel.get("colors")))
         self.refresh()
 
+    def add_section(self) -> None:
+        self.rerun_wizard(add_section=True)
+
     @safe_slot
-    def rerun_wizard(self) -> None:
-        dialog = SettingsDialog()
-        dialog.prefill(self.cfg.raw, self.cfg.path.parent)
-        dialog.theme_combo.setToolTip("选中配色后立即应用并保存")
-        dialog.theme_selected.connect(self._save_theme)
-        if dialog.exec_() != SettingsDialog.Accepted or not dialog.result_config:
+    def remove_section(self, index: int) -> None:
+        sections = self.cfg.sections
+        if not 0 <= index < len(sections):
             return
-        cfg = Config(self.cfg.path, dialog.result_config)
+        sections.pop(index)
+        mapping = {**self.cfg.mapping, "sections": sections}
+        cfg = Config(self.cfg.path, {**self.cfg.raw, "mapping": mapping})
+        try:
+            cfg.save()
+        except OSError as exc:
+            QMessageBox.warning(self.panel, "移除区块失败", str(exc))
+            return
+        self.cfg = cfg
+        self.session.remove_section(index)
+        self.refresh()
+
+    @safe_slot
+    def rerun_wizard(self, *, add_section: bool = False) -> None:
+        dialog = SettingsDialog(self.panel if add_section else None, add_section=add_section)
+        try:
+            dialog.prefill(self.cfg.raw, self.cfg.path.parent)
+            if not add_section:
+                dialog.theme_combo.setToolTip("选中配色后立即应用并保存")
+                dialog.theme_selected.connect(self._save_theme)
+            if dialog.exec_() != SettingsDialog.Accepted or not dialog.result_config:
+                return
+            cfg = Config(self.cfg.path, dialog.result_config)
+        finally:
+            dialog.deleteLater()
         try:
             session = TaskSession(cfg, state_path())
-            save_settings(cfg)
+            if add_section:
+                cfg.save()
+            else:
+                save_settings(cfg)
         except (OSError, ValueError, SourceError) as exc:
             QMessageBox.warning(self.panel, "保存失败", str(exc))
             return

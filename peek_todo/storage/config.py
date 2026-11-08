@@ -65,6 +65,19 @@ class Config:
         return self.raw.get("mapping") or {}
 
     @property
+    def sections(self) -> list[dict[str, Any]]:
+        sections = self.mapping.get("sections")
+        if not isinstance(sections, list):
+            return []
+        return [
+            section for section in sections
+            if isinstance(section, dict)
+            and isinstance(path := section.get("root_path"), list)
+            and path and all(isinstance(title, str) and title.strip() for title in path)
+            and isinstance(section.get("mode"), str)
+        ]
+
+    @property
     def vocabulary(self) -> dict[str, Any]:
         return self.raw.get("vocabulary") or {}
 

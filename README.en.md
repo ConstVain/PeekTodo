@@ -46,6 +46,12 @@ Reopen Settings from the tray. Choose Cream or Dark, and let the accent follow t
 | Drag the top-left or bottom-left corner | Resize the panel and scale its text |
 | Click the marker next to an item | Toggle its checkmark |
 
+### Show multiple sections in one panel
+
+Click `+` in the lower-left corner, choose a node from the current source, choose a mode, and click **Add**. The new section appears below the existing content. Scroll down if it extends beyond the panel.
+
+Click `−` in the top-right corner of an added section to remove it. PeekTodo saves these changes immediately and keeps the source document and checkmark records intact.
+
 ### Three modes
 
 <table>
