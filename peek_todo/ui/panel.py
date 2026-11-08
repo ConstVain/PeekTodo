@@ -19,11 +19,11 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from ..model import Task
-from ..win32 import raise_foreground, set_no_activate
+from ..domain.model import Task
+from ..windows.win32 import raise_foreground, set_no_activate
 
-from ..selection import View
-from .theme import Theme, accent as theme_accent, body_font_family, get as get_theme
+from ..domain.selection import View
+from .theme import MODE_ACCENTS, Theme, accent as theme_accent, body_font_family, get as get_theme
 
 ACCENT = "#7aa2ff"  # 兜底色，实际用 theme.accent()
 # 底部时间戳用的字体（得意黑，斜体）；没装就自动回落到系统默认
@@ -113,8 +113,7 @@ class _Grip(QWidget):
 
 
 class TaskRow(QWidget):
-    toggled = pyqtSignal(str)
-    opened = pyqtSignal(str)
+    toggled = pyqtSignal(str, bool)
     pressed = pyqtSignal()
 
     def __init__(
@@ -138,7 +137,7 @@ class TaskRow(QWidget):
         self._scale = max(0.7, min(scale, 1.8))
         self.setAttribute(Qt.WA_Hover, True)
         self.setCursor(Qt.PointingHandCursor)
-        self.setToolTip("点方框勾选（只改面板本地状态） · 双击文字打开源 · 点空白处钉住面板")
+        self.setToolTip("点方框勾选（只改面板本地状态） · 点空白处钉住面板")
 
         layout = QHBoxLayout(self)
         # 子项缩进：一级子项退一格，二级再退一格，视觉上明确从属关系
@@ -220,19 +219,13 @@ class TaskRow(QWidget):
         if event.button() != Qt.LeftButton:
             return
         self.pressed.emit()
-        # 只有点勾选框才切换状态；点文字不做事（钉住由面板的事件过滤器处理），
-        # 想打开源文件用双击——避免"想钉住却把编辑器打开了"
+        # 只有点勾选框才切换完成状态。
         if event.pos().x() <= self._box_w + round(6 * self._scale):
-            self.toggled.emit(self.task.id)
-
-    def mouseDoubleClickEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            self.opened.emit(self.task.id)
+            self.toggled.emit(self.task.id, not self.task.done)
 
 
 class Panel(QWidget):
-    open_source_requested = pyqtSignal()
-    task_toggled = pyqtSignal(str)
+    task_toggled = pyqtSignal(str, bool)
     height_changed = pyqtSignal(int)
     resized = pyqtSignal(int, int)
     pinned_changed = pyqtSignal(bool)
@@ -263,6 +256,8 @@ class Panel(QWidget):
         self._drag_dy = 0
         self._dragging = False
         self._pinned = False
+        self._content_key = None
+        self._accent_override = None
         self._last_view = None
         self._last_meta = None
         self._animate_ms = animate_ms
@@ -613,7 +608,6 @@ class Panel(QWidget):
             scale=self._scale,
         )
         row.toggled.connect(self.task_toggled.emit)
-        row.opened.connect(lambda _tid: self.open_source_requested.emit())
         row.pressed.connect(lambda: self.pin(True))
         return row
 
@@ -646,10 +640,28 @@ class Panel(QWidget):
         row.addStretch(1)
         return host
 
+    def present(self, view: View, meta: dict, accent_override: str | None = None) -> None:
+        def rows(tasks):
+            return tuple((task.id, task.text, task.done, task.depth) for task in tasks)
+
+        key = (
+            view.headline, view.now.date(), view.mode, view.open_count, view.done_count,
+            view.show_bottom, view.section_label, view.unknown_label, view.overdue_ids,
+            rows(view.current), rows(view.unknown),
+            tuple((group.label, rows(group.tasks)) for group in view.today_groups),
+            accent_override,
+        )
+        self._accent_override = accent_override
+        if self._content_key != key:
+            self.render(view, meta)
+            self._content_key = key
+        else:
+            self._last_view = view
+            self._last_meta = meta
+            self._render_status(view, meta)
+
     def render(self, view: View, meta: dict):
-        # 浅色主题要把强调色压暗一档，这里必须过一遍 theme.accent()，
-        # 否则标签/竖条还是深色主题的原色
-        accent = theme_accent(self.theme, view.accent)
+        accent = self._accent_override or theme_accent(self.theme, MODE_ACCENTS[view.mode])
         self._last_view = view
         self._last_meta = meta
         self._accent = accent
@@ -710,6 +722,10 @@ class Panel(QWidget):
         self.divider_widget.setVisible(view.show_bottom)
         self.scroll.setVisible(view.show_bottom)
 
+        self._render_status(view, meta)
+        QTimer.singleShot(0, self.fit_height)
+
+    def _render_status(self, view: View, meta: dict) -> None:
         level = meta.get("level", "ok")
         self._level = level
         self.dot.setStyleSheet(
@@ -723,9 +739,9 @@ class Panel(QWidget):
         self.status.setText(status)
         self.status.setToolTip(meta.get("detail", ""))
 
-        QTimer.singleShot(0, self.fit_height)
-
     def render_error(self, message: str, detail: str = ""):
+        self._content_key = None
+        self._last_view = None
         self._level = "error"
         self.headline.setText("读不到数据")
         self.meta.setText("数据源异常")

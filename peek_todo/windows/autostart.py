@@ -2,24 +2,16 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
+from subprocess import list2cmdline
+
+from .launch import launch_arguments
 
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 APP_ID = "PeekTodo"
 
 
-def _pythonw() -> Path:
-    exe = Path(sys.executable)
-    candidate = exe.with_name("pythonw.exe")
-    return candidate if candidate.exists() else exe
-
-
 def launch_command() -> str:
-    """打包成 exe 后直接指向 exe；源码运行时用 pythonw -m peek_todo。"""
-    if getattr(sys, "frozen", False):
-        return f'"{sys.executable}" --silent'
-    return f'"{_pythonw()}" -m peek_todo --silent'
+    return list2cmdline(launch_arguments("--silent"))
 
 
 def is_enabled() -> bool:

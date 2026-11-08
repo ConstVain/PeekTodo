@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from re import fullmatch
 
 
 @dataclass(frozen=True)
@@ -190,3 +191,54 @@ def accent(theme: Theme, color: str) -> str:
     if theme.darken_accent:
         return _LIGHT_ACCENTS.get(color.lower(), color)
     return color
+
+
+# 三种模式各自的强调色，UI 和报告都从这里取
+MODE_ACCENTS = {
+    "week": "#4ade80",  # 绿
+    "due": "#f0b45f",  # 琥珀
+    "memo": "#7aa2ff",  # 蓝
+}
+
+# 用户在设置里可以覆盖成固定色（"auto" = 跟随模式）
+ACCENT_PRESETS = {
+    "blue": "#7aa2ff",
+    "violet": "#a78bfa",
+    "teal": "#2dd4bf",
+}
+
+
+SAVED_ACCENT_PREFIX = "saved:"
+
+
+def _hex_color(color: object) -> str | None:
+    if isinstance(color, str) and fullmatch(r"#[0-9a-fA-F]{6}", color):
+        return color.lower()
+    return None
+
+
+def custom_accent(panel: dict) -> str | None:
+    return _hex_color(panel.get("customAccent"))
+
+
+def saved_accents(panel: dict) -> dict[str, str]:
+    saved = panel.get("savedAccents")
+    if not isinstance(saved, dict):
+        return {}
+    return {
+        color: name.strip()
+        for value, name in saved.items()
+        if (color := _hex_color(value)) and isinstance(name, str) and name.strip()
+    }
+
+
+def panel_accent(theme: Theme, panel: dict, mode: str) -> str:
+    choice = panel.get("accent", "auto")
+    if choice == "custom" and (color := custom_accent(panel)):
+        return color
+    if isinstance(choice, str) and choice.startswith(SAVED_ACCENT_PREFIX):
+        color = choice.removeprefix(SAVED_ACCENT_PREFIX)
+        if color in saved_accents(panel):
+            return color
+    override = (panel.get("accents") or {}).get(mode)
+    return accent(theme, override or ACCENT_PRESETS.get(choice) or MODE_ACCENTS[mode])

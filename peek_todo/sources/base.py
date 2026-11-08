@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from ..model import Node
+from ..domain.model import Node
 
 
 class SourceError(RuntimeError):

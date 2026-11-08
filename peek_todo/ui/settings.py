@@ -7,8 +7,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from stat import S_ISREG
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import QSettings, QStandardPaths, Qt, QTimer, pyqtSignal
+from PyQt5.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PyQt5.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -28,15 +30,21 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
 )
 
-from ..config import DEFAULT_BEHAVIOR, DEFAULT_PANEL, DEFAULT_PERIODS
-from ..model import Node
-from ..opener import open_source
+from ..application.configuration import build_source
+from ..storage.config import Config, DEFAULT_BEHAVIOR, DEFAULT_PANEL
+from ..storage.paths import assets_dir, user_data_dir
+from ..domain.model import Node
+from ..windows.opener import open_source
 from ..sources.base import SourceError
-from ..sources.markdown import MarkdownSource
-from ..sources.mubu import MubuSource, list_documents
-from ..template import DEFAULT_FILENAME, write_template
-from .theme import THEMES
-from ..structure import (
+from ..sources.mubu import list_documents
+from ..application.template import DEFAULT_TEMPLATE, default_filename, write_template
+from .accent_menu import REMOVABLE_ROLE, AccentComboBox
+from .accent_picker import AccentPicker
+from .theme import (
+    ACCENT_PRESETS, SAVED_ACCENT_PREFIX, THEMES, Theme, accent as themed_accent,
+    custom_accent, get as get_theme, panel_accent, saved_accents,
+)
+from ..domain.structure import (
     MODE_DUE,
     MODE_LABELS,
     MODE_MEMO,
@@ -45,57 +53,90 @@ from ..structure import (
     map_document,
 )
 
-ACCENT_CHOICES = [
-    ("auto", "跟随模式", "#7aa2ff"),
-    ("blue", "湖蓝", "#7aa2ff"),
-    ("violet", "雾紫", "#a78bfa"),
-    ("teal", "青绿", "#2dd4bf"),
-]
+PRESET_NAMES = {"blue": "湖蓝", "violet": "雾紫", "teal": "青绿"}
 REFRESH_CHOICES = [3000, 5000, 10000, 30000, 60000]
 
-QSS = """
-QDialog { background: #17181d; }
-QLabel { color: #d8dce4; }
-QLabel#title { color: #f2f4f8; font-size: 19px; font-weight: 600; }
-QLabel#subtitle { color: #7c8391; font-size: 12px; }
-QLabel#sectionTitle { color: #9aa1ad; font-size: 11px; letter-spacing: 1.2px; }
-QLabel#hint { color: #7c8391; font-size: 12px; }
-QLabel#ok { color: #6ee7a8; font-size: 12px; }
-QLabel#warn { color: #f0b45f; font-size: 12px; }
-QLabel#source { color: #b6bcc7; font-size: 12px; }
-QFrame#section {
-    background: #1e2027; border: 1px solid #262932; border-radius: 10px;
-}
-QPushButton {
-    background: #262932; color: #d8dce4; border: 1px solid #333744;
+
+def _settings_style(theme: Theme, color: str) -> str:
+    rgb = QColor(color).getRgbF()[:3]
+    linear = [channel / 12.92 if channel <= 0.04045 else ((channel + 0.055) / 1.055) ** 2.4
+              for channel in rgb]
+    luminance = sum(channel * weight for channel, weight in zip(linear, (0.2126, 0.7152, 0.0722)))
+    foreground = "#000000" if luminance >= 0.179 else "#ffffff"
+    checkmark = "check-dark.svg" if luminance >= 0.179 else "check-light.svg"
+    checkmark_path = (assets_dir() / checkmark).as_posix()
+    return f"""
+QDialog {{ background: {theme.card_mid}; }}
+QLabel {{ color: {theme.text_soft}; }}
+QLabel#title {{ color: {theme.text}; font-size: 19px; font-weight: 600; }}
+QLabel#sectionTitle {{ color: {theme.text_dim}; font-size: 11px; letter-spacing: 1.2px; }}
+QLabel#hint {{ color: {theme.text_dim}; font-size: 12px; }}
+QLabel#ok {{ color: {theme.ok}; font-size: 12px; }}
+QLabel#warn {{ color: {theme.warn}; font-size: 12px; }}
+QLabel#source {{ color: {theme.text_soft}; font-size: 12px; }}
+QFrame#section {{
+    background: {theme.card_top}; border: 1px solid {theme.card_border}; border-radius: 10px;
+}}
+QPushButton {{
+    background: {theme.card_bottom}; color: {theme.text_soft}; border: 1px solid {theme.card_border};
     border-radius: 7px; padding: 7px 14px; font-size: 13px;
-}
-QPushButton:hover { background: #2e323d; border-color: #434858; }
-QPushButton:pressed { background: #22252d; }
-QPushButton#primary {
-    background: #3b5bdb; border-color: #4c6ef5; color: #ffffff; font-weight: 600;
-}
-QPushButton#primary:hover { background: #4c6ef5; }
-QPushButton#ghost { background: transparent; border-color: #2c303a; }
-QTreeWidget {
-    background: #14151a; color: #d8dce4; border: 1px solid #2a2d37;
+}}
+QPushButton:hover {{ background: {theme.chip_bg}; border-color: {color}; }}
+QPushButton:pressed {{ background: {theme.chip_bg}; }}
+QPushButton#primary {{
+    background: {color}; border-color: {color}; color: {foreground}; font-weight: 600;
+}}
+QPushButton#primary:hover {{ background: {color}; }}
+QPushButton#ghost {{ background: transparent; border-color: {theme.card_border}; }}
+QPushButton#ghost:hover, QPushButton#ghost:focus {{ border-color: {color}; }}
+QPushButton:focus, QComboBox:focus, QComboBox:hover {{ border-color: {color}; }}
+QTreeWidget {{
+    background: {theme.card_bottom}; color: {theme.text_soft}; border: 1px solid {theme.card_border};
     border-radius: 8px; outline: none; font-size: 13px; padding: 4px;
-}
-QTreeWidget::item { padding: 3px 2px; }
-QTreeWidget::item:selected { background: #2b3350; border-radius: 4px; }
-QTreeWidget::item:hover { background: #22252d; }
-QRadioButton { color: #d8dce4; font-size: 13px; spacing: 6px; }
-QComboBox {
-    background: #262932; color: #d8dce4; border: 1px solid #333744;
+}}
+QTreeWidget::item {{ padding: 3px 2px; }}
+QTreeWidget::item:hover:!selected {{ background: {theme.chip_bg}; }}
+QTreeWidget::item:selected {{ background: {color}; color: {foreground}; border-radius: 4px; }}
+QRadioButton {{ color: {theme.text_soft}; font-size: 13px; spacing: 6px; }}
+QComboBox {{
+    background: {theme.card_bottom}; color: {theme.text_soft}; border: 1px solid {theme.card_border};
     border-radius: 7px; padding: 6px 10px; font-size: 13px; min-width: 110px;
-}
-QComboBox::drop-down { border: none; width: 18px; }
-QComboBox QAbstractItemView {
-    background: #202229; color: #d8dce4; border: 1px solid #333744;
-    selection-background-color: #2b3350;
-}
-QCheckBox { color: #d8dce4; font-size: 13px; spacing: 8px; }
+}}
+QComboBox QAbstractItemView {{
+    background: {theme.card_top}; color: {theme.text_soft}; border: 1px solid {theme.card_border};
+    selection-background-color: {color}; selection-color: {foreground};
+}}
+QCheckBox {{ color: {theme.text_soft}; font-size: 13px; spacing: 8px; }}
+QRadioButton::indicator, QCheckBox::indicator {{
+    width: 14px; height: 14px;
+    background: {theme.card_top}; border: 1px solid {theme.text_dim};
+}}
+QRadioButton::indicator {{ border-radius: 8px; }}
+QCheckBox::indicator {{ border-radius: 4px; }}
+QRadioButton::indicator:hover, QCheckBox::indicator:hover {{
+    border-color: {color};
+}}
+QRadioButton::indicator:checked {{
+    border-color: {color};
+    background: qradialgradient(cx:0.5, cy:0.5, radius:0.5, fx:0.5, fy:0.5,
+        stop:0 {color}, stop:0.56 {color}, stop:0.65 {theme.card_top}, stop:1 {theme.card_top});
+}}
+QCheckBox::indicator:checked {{
+    background: {color}; border-color: {color}; image: url("{checkmark_path}");
+}}
 """
+
+
+def _swatch(color: str, border: str) -> QIcon:
+    dot = QPixmap(16, 16)
+    dot.fill(Qt.transparent)
+    painter = QPainter(dot)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setPen(QPen(QColor(border)))
+    painter.setBrush(QColor(color))
+    painter.drawEllipse(2, 2, 11, 11)
+    painter.end()
+    return QIcon(dot)
 
 
 class Section(QFrame):
@@ -116,11 +157,12 @@ class Section(QFrame):
 
 
 class SettingsDialog(QDialog):
+    theme_selected = pyqtSignal(str)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("PeekTodo 设置")
         self.resize(760, 720)
-        self.setStyleSheet(QSS)
         self.result_config: dict | None = None
 
         self._source: dict = {}
@@ -128,9 +170,33 @@ class SettingsDialog(QDialog):
         self._node_by_item: dict[int, Node] = {}
         self._restoring = False
         # 已有的面板设置（宽度/高度等），保存时原样带回去，别被默认值覆盖
-        self._panel_cfg: dict = dict(DEFAULT_PANEL)
+        self._original: dict = {}
+        self._custom_accent: str | None = None
+        self._saved_accents: dict[str, str] = {}
+        self._hidden_accents: set[str] = set()
+        self._accent_key = "auto"
+        self._config_dir = Path.cwd()
+        self._preferences = QSettings(str(user_data_dir() / "dialogs.ini"), QSettings.IniFormat)
+        self._markdown_path: Path | None = None
+        self._markdown_revision: tuple[int, int, int] | None = None
+        self._preview_timer = QTimer(self)
+        self._preview_timer.setInterval(250)
+        self._preview_timer.timeout.connect(self._refresh_markdown_preview)
 
         self._build_ui()
+        self._apply_appearance()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Qt may keep the palette from before prefill until the visible dialog is repolished.
+        style = self.styleSheet()
+        self.setStyleSheet("")
+        self.setStyleSheet(style)
+        self._preview_timer.start()
+
+    def hideEvent(self, event):
+        self._preview_timer.stop()
+        super().hideEvent(event)
 
     # ---------- 构建 ----------
 
@@ -141,10 +207,7 @@ class SettingsDialog(QDialog):
 
         title = QLabel("PeekTodo 设置")
         title.setObjectName("title")
-        subtitle = QLabel("选好数据源和结构后保存；以后想改随时从托盘菜单打开这里")
-        subtitle.setObjectName("subtitle")
         root.addWidget(title)
-        root.addWidget(subtitle)
 
         root.addWidget(self._source_section())
         root.addWidget(self._structure_section(), 1)
@@ -197,7 +260,8 @@ class SettingsDialog(QDialog):
     def _open_source(self) -> None:
         if not self._source:
             return
-        reason = open_source(self._source)
+        cfg = Config(self._config_dir / "config.json", {"source": self._source})
+        reason = open_source(cfg.resolved_source())
         if reason:
             QMessageBox.warning(self, "打不开数据源", reason)
 
@@ -223,7 +287,7 @@ class SettingsDialog(QDialog):
         for radio in (self.radio_week, self.radio_due, self.radio_memo):
             group.addButton(radio)
             modes.addWidget(radio)
-        self.radio_week.toggled.connect(self._on_mode_changed)
+        group.buttonToggled.connect(self._on_mode_toggled)
         modes.addStretch(1)
         section.body.addLayout(modes)
 
@@ -245,16 +309,19 @@ class SettingsDialog(QDialog):
         row1.addWidget(self.refresh_combo)
         row1.addSpacing(18)
         row1.addWidget(self._plain("强调色"))
-        self.accent_combo = QComboBox()
-        for key, label, color in ACCENT_CHOICES:
-            self.accent_combo.addItem(label, key)
-            self.accent_combo.setItemData(self.accent_combo.count() - 1, color, Qt.ToolTipRole)
+        self.accent_combo = AccentComboBox()
+        self._populate_accents("auto")
+        self.accent_combo.activated.connect(self._choose_accent)
+        self.accent_combo.remove_requested.connect(self._remove_accent)
         row1.addWidget(self.accent_combo)
         row1.addSpacing(18)
         row1.addWidget(self._plain("配色"))
         self.theme_combo = QComboBox()
         for key, theme in THEMES.items():
-            self.theme_combo.addItem(theme.name, key)
+            self.theme_combo.addItem(_swatch(theme.card_mid, theme.text_dim), theme.name, key)
+        self.theme_combo.setCurrentIndex(self.theme_combo.findData(DEFAULT_PANEL["theme"]))
+        self.theme_combo.currentIndexChanged.connect(self._apply_appearance)
+        self.theme_combo.activated.connect(self._select_theme)
         row1.addWidget(self.theme_combo)
         row1.addStretch(1)
         self.autostart_check = QCheckBox("开机自启")
@@ -264,10 +331,89 @@ class SettingsDialog(QDialog):
         row1.addWidget(self.shortcut_check)
         section.body.addLayout(row1)
 
-        note = QLabel("强调色选「跟随模式」时，周计划用蓝、截止日用琥珀、备忘单用绿")
-        note.setObjectName("hint")
-        section.body.addWidget(note)
         return section
+
+    def _panel_preferences(self) -> dict:
+        panel = {
+            **(self._original.get("panel") or {}),
+            "theme": self.theme_combo.currentData(),
+            "accent": self.accent_combo.currentData(),
+        }
+        if self._custom_accent is not None:
+            panel["customAccent"] = self._custom_accent
+        if self._saved_accents or "savedAccents" in panel:
+            panel["savedAccents"] = dict(self._saved_accents)
+        if self._hidden_accents or "hiddenAccents" in panel:
+            panel["hiddenAccents"] = sorted(self._hidden_accents)
+        return panel
+
+    def _populate_accents(self, selected: str) -> None:
+        combo = self.accent_combo
+        combo.clear()
+        combo.addItem("跟随模式", "auto")
+        colors = [(key, name) for key, name in PRESET_NAMES.items() if key not in self._hidden_accents]
+        colors.extend((SAVED_ACCENT_PREFIX + color, name) for color, name in self._saved_accents.items())
+        for key, name in colors:
+            combo.addItem(name, key)
+            combo.setItemData(combo.count() - 1, True, REMOVABLE_ROLE)
+        combo.addItem("自定义…", "custom")
+        combo.setCurrentIndex(max(0, combo.findData(selected)))
+        self._accent_key = combo.currentData()
+
+    def _remove_accent(self, key: str) -> None:
+        if key in PRESET_NAMES:
+            self._hidden_accents.add(key)
+        else:
+            self._saved_accents.pop(key.removeprefix(SAVED_ACCENT_PREFIX), None)
+        self._populate_accents(self._accent_key)
+        self._apply_appearance()
+
+    def _select_theme(self, index: int) -> None:
+        self.theme_selected.emit(self.theme_combo.itemData(index))
+
+    def _apply_appearance(self) -> None:
+        panel = self._panel_preferences()
+        theme = get_theme(panel["theme"], panel.get("colors"))
+        mode = self._selected_mode()
+        style = _settings_style(theme, panel_accent(theme, panel, mode))
+        if style != self.styleSheet():
+            self.setStyleSheet(style)
+        colors = {key: themed_accent(theme, color) for key, color in ACCENT_PRESETS.items()}
+        colors["auto"] = panel_accent(theme, {**panel, "accent": "auto"}, mode)
+        colors["custom"] = self._custom_accent or colors["auto"]
+        colors.update({SAVED_ACCENT_PREFIX + color: color for color in self._saved_accents})
+        for index in range(self.accent_combo.count()):
+            key = self.accent_combo.itemData(index)
+            self.accent_combo.setItemIcon(index, _swatch(colors[key], theme.text_dim))
+
+    def _choose_accent(self, index: int) -> None:
+        key = self.accent_combo.itemData(index)
+        if key == "custom":
+            panel = self._panel_preferences()
+            theme = get_theme(panel["theme"], panel.get("colors"))
+            previous = {**panel, "accent": self._accent_key}
+            initial = self._custom_accent or panel_accent(theme, previous, self._selected_mode())
+            picker = AccentPicker(QColor(initial), self)
+            try:
+                if picker.exec_() != QDialog.Accepted:
+                    self.accent_combo.setCurrentIndex(self.accent_combo.findData(self._accent_key))
+                    return
+                color = picker.color().name()
+                if picker.saved_name is None:
+                    self._custom_accent = color
+                else:
+                    self._saved_accents[color] = picker.saved_name
+                    key = SAVED_ACCENT_PREFIX + color
+                    self._populate_accents(key)
+            finally:
+                picker.deleteLater()
+        self._accent_key = key
+        self._apply_appearance()
+
+    def _on_mode_toggled(self, _button, checked: bool) -> None:
+        if checked:
+            self._on_mode_changed()
+            self._apply_appearance()
 
     @staticmethod
     def _plain(text: str) -> QLabel:
@@ -277,14 +423,24 @@ class SettingsDialog(QDialog):
 
     # ---------- 数据源 ----------
 
+    @staticmethod
+    def _file_revision(path: Path | None) -> tuple[int, int, int] | None:
+        if path is None:
+            return None
+        try:
+            info = path.stat()
+        except OSError:
+            return None
+        if S_ISREG(info.st_mode):
+            return info.st_mtime_ns, info.st_size, info.st_ino
+        return None
+
     def _load(self, source: dict, display: str, quiet: bool = False) -> bool:
         try:
-            fetcher = (
-                MarkdownSource(source["path"], recursive=source.get("recursive", True))
-                if source["type"] == "markdown"
-                else MubuSource(source["docId"])
-            )
-            result = fetcher.fetch()
+            cfg = Config(self._config_dir / "config.json", {"source": source})
+            path = cfg.source_path() if source.get("type") == "markdown" else None
+            revision = self._file_revision(path)
+            result = build_source(cfg).fetch()
         except SourceError as exc:
             if quiet:
                 self.source_label.setText(f"{display}（读不到：{exc}）")
@@ -293,38 +449,88 @@ class SettingsDialog(QDialog):
             return False
 
         self._source = source
+        self._markdown_path = path
+        self._markdown_revision = revision
         self.source_label.setText(display)
         self.source_label.setObjectName("source")
-        self.source_label.setStyleSheet("color:#b6bcc7; font-size:12px;")
+        self.source_label.style().unpolish(self.source_label)
+        self.source_label.style().polish(self.source_label)
         self.btn_open.setEnabled(True)
         self._tree_root = result.tree
         self._fill_tree(result.tree)
         self.detect_label.setText("")
         return True
 
+    def _refresh_markdown_preview(self) -> None:
+        revision = self._file_revision(self._markdown_path)
+        if revision is None or revision == self._markdown_revision:
+            return
+
+        root_path = self._root_path()
+        self._restoring = True
+        try:
+            if self._load(self._source, self._source["path"], quiet=True) and root_path:
+                self._select_path(root_path, focus=False)
+        finally:
+            self._restoring = False
+        self._on_mode_changed()
+
+    def _markdown_folder(self) -> Path:
+        last = self._preferences.value("markdown/folder", "", type=str)
+        if last and Path(last).is_dir():
+            return Path(last)
+        documents = QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)
+        return Path(documents) if documents and Path(documents).is_dir() else Path.home()
+
+    def _remember_markdown_folder(self, path: Path) -> None:
+        self._preferences.setValue("markdown/folder", str(path.parent))
+        self._preferences.sync()
+
     def _pick_file(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "选择 Markdown 文件", "", "Markdown (*.md *.markdown);;所有文件 (*)"
+            self, "选择 Markdown 文件", str(self._markdown_folder()),
+            "Markdown (*.md *.markdown);;所有文件 (*)",
         )
-        if path:
-            self._load({"type": "markdown", "path": path}, path)
+        if path and self._load({"type": "markdown", "path": path}, path):
+            self._remember_markdown_folder(Path(path))
 
     def _new_markdown(self):
-        default = str(Path.home() / "Documents" / DEFAULT_FILENAME)
-        path, _ = QFileDialog.getSaveFileName(self, "新建计划文档", default, "Markdown (*.md)")
-        if not path:
+        picker = QFileDialog(
+            self, "选择模板", str(DEFAULT_TEMPLATE.parent), "Markdown (*.md *.markdown)",
+        )
+        picker.setFileMode(QFileDialog.ExistingFile)
+        picker.setLabelText(QFileDialog.Accept, "确定")
+        picker.selectFile(DEFAULT_TEMPLATE.name)
+        if picker.exec_() != QDialog.Accepted or not (templates := picker.selectedFiles()):
             return
-        if not path.lower().endswith((".md", ".markdown")):
-            path += ".md"
+
+        dialog = QFileDialog(self, "保存位置", str(self._markdown_folder()), "Markdown (*.md *.markdown)")
+        dialog.setAcceptMode(QFileDialog.AcceptSave)
+        dialog.setDefaultSuffix("md")
+        dialog.selectFile(default_filename())
+        if dialog.exec_() != QDialog.Accepted or not (files := dialog.selectedFiles()):
+            return
+        target = Path(files[0])
         try:
-            target = write_template(path)
+            write_template(Path(templates[0]), target)
         except OSError as exc:
             QMessageBox.warning(self, "写不了这个位置", str(exc))
             return
 
-        self._load({"type": "markdown", "path": str(target)}, str(target))
-        self.source_label.setText(f"{target}（新建，可直接编辑）")
-        open_source({"type": "markdown", "path": str(target)})
+        self._remember_markdown_folder(target)
+        source = {"type": "markdown", "path": str(target)}
+        if self._load(source, str(target)):
+            self.source_label.setText(f"{target}（新建，可直接编辑）")
+            # 两份内置模板都把一周的时段放在「目标与事项 → 规划」下。
+            if self._tree_root is not None and any(
+                node.text == "目标与事项" and any(child.text == "规划" for child in node.children)
+                for node in self._tree_root.children
+            ):
+                self._select_path(["目标与事项", "规划"])
+                self._restoring = False
+                self.radio_week.setChecked(True)
+                self._on_mode_changed()
+        open_source(source)
 
     def _pick_mubu(self):
         docs = list_documents()
@@ -420,11 +626,9 @@ class SettingsDialog(QDialog):
         self._detect("hint", f"按「{MODE_LABELS[mode]}」解析：{result.task_count} 条事项")
 
     def _detect(self, kind: str, text: str) -> None:
-        colors = {"ok": "#6ee7a8", "warn": "#f0b45f", "hint": "#7c8391"}
         self.detect_label.setObjectName(kind)
-        self.detect_label.setStyleSheet(
-            f"color:{colors.get(kind, '#7c8391')}; font-size:12px;"
-        )
+        self.detect_label.style().unpolish(self.detect_label)
+        self.detect_label.style().polish(self.detect_label)
         self.detect_label.setText(text)
 
     def _selected_mode(self) -> str:
@@ -436,12 +640,14 @@ class SettingsDialog(QDialog):
 
     # ---------- 保存 ----------
 
-    def prefill(self, config: dict | None) -> None:
+    def prefill(self, config: dict | None, config_dir: Path | None = None) -> None:
         """用现有配置回填：数据源、根节点、模式，以及刷新间隔/强调色/自启。"""
         config = config or {}
         behavior = {**DEFAULT_BEHAVIOR, **(config.get("behavior") or {})}
         panel = {**DEFAULT_PANEL, **(config.get("panel") or {})}
-        self._panel_cfg = panel
+        self._original = config
+        if config_dir is not None:
+            self._config_dir = config_dir
 
         index = self.refresh_combo.findData(int(behavior.get("refreshMs", 5000)))
         if index < 0:
@@ -450,13 +656,16 @@ class SettingsDialog(QDialog):
             index = self.refresh_combo.count() - 1
         self.refresh_combo.setCurrentIndex(index)
 
-        accent = self.accent_combo.findData(panel.get("accent", "auto"))
-        self.accent_combo.setCurrentIndex(max(0, accent))
+        self._custom_accent = custom_accent(panel)
+        self._saved_accents = saved_accents(panel)
+        hidden = panel.get("hiddenAccents")
+        self._hidden_accents = {key for key in PRESET_NAMES if isinstance(hidden, list) and key in hidden}
+        self._populate_accents(panel.get("accent", "auto"))
 
         theme_index = self.theme_combo.findData(panel.get("theme", "cream"))
         self.theme_combo.setCurrentIndex(max(0, theme_index))
 
-        from .. import autostart, shortcut
+        from ..windows import autostart, shortcut
 
         self.autostart_check.setChecked(bool(behavior.get("autostart")) or autostart.is_enabled())
         self.shortcut_check.setChecked(
@@ -480,8 +689,9 @@ class SettingsDialog(QDialog):
                 if radio is not None:
                     radio.setChecked(True)
                 self._on_mode_changed()
+        self._apply_appearance()
 
-    def _select_path(self, path: list[str]) -> None:
+    def _select_path(self, path: list[str], *, focus: bool = True) -> None:
         """按 root_path 在树里定位并滚动到对应节点。"""
         if not path:
             return
@@ -513,7 +723,8 @@ class SettingsDialog(QDialog):
         self.tree.setCurrentItem(item)
         item.setSelected(True)
         self.tree.scrollToItem(item, QAbstractItemView.PositionAtCenter)
-        self.tree.setFocus()
+        if focus:
+            self.tree.setFocus()
 
     def _save(self):
         # 槽函数里抛异常会让 PyQt5 直接 abort（表现为闪退），这里兜住
@@ -535,22 +746,19 @@ class SettingsDialog(QDialog):
             return
 
         refresh_ms = int(self.refresh_combo.currentData() or 5000)
-        accent = self.accent_combo.currentData() or "auto"
-        theme_key = self.theme_combo.currentData() or "cream"
 
         self.result_config = {
-            "version": 1,
+            **self._original,
+            "version": self._original.get("version", 1),
             "source": self._source,
             "mapping": {
+                **(self._original.get("mapping") or {}),
                 "root_path": path,
                 "mode": self._selected_mode(),
-                "aliases": {},
             },
-            "vocabulary": {"weekdays": {}, "periods": {}},
-            "periods": DEFAULT_PERIODS,
-            "panel": {**self._panel_cfg, "accent": accent, "theme": theme_key},
+            "panel": self._panel_preferences(),
             "behavior": {
-                **DEFAULT_BEHAVIOR,
+                **(self._original.get("behavior") or {}),
                 "refreshMs": refresh_ms,
                 "autostart": self.autostart_check.isChecked(),
                 "desktopShortcut": self.shortcut_check.isChecked(),

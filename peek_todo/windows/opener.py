@@ -9,7 +9,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from .sources.mubu import DATA_ROOT, normalize_doc_id
+from ..sources.mubu import DATA_ROOT, normalize_doc_id
 
 
 def open_source(source: dict) -> str | None:

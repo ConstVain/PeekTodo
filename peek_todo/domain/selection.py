@@ -6,11 +6,11 @@ due （截止日）：按日期筛选，上方是逾期 + 今天到期，下方�
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 
 from .model import Group, MappingResult, Task
-from .state import LocalState
 from .structure import MODE_DUE, MODE_MEMO, MODE_WEEK
 from .vocabulary import describe_date
 
@@ -34,27 +34,11 @@ class View:
     unknown_label: str = "未识别时间"
     section_label: str = "今天全部"
     show_bottom: bool = True  # 备忘单模式没有"下方列表"
-    accent: str = "#7aa2ff"  # 强调色，由模式决定
     overdue_ids: set[str] = field(default_factory=set)  # 逾期事项的 id，用于标红
 
     @property
     def total(self) -> int:
         return self.open_count + self.done_count
-
-
-# 三种模式各自的强调色，UI 和报告都从这里取
-MODE_ACCENTS = {
-    "week": "#4ade80",  # 绿
-    "due": "#f0b45f",  # 琥珀
-    "memo": "#7aa2ff",  # 蓝
-}
-
-# 用户在设置里可以覆盖成固定色（"auto" = 跟随模式）
-ACCENT_PRESETS = {
-    "blue": "#7aa2ff",
-    "violet": "#a78bfa",
-    "teal": "#2dd4bf",
-}
 
 
 def _minutes(hhmm: str) -> int:
@@ -72,13 +56,6 @@ def period_of(moment: datetime, periods: list[dict]) -> str:
     return current["name"]
 
 
-def _apply_state(tasks: list[Task], state: LocalState | None) -> None:
-    if state is None:
-        return
-    for task in tasks:
-        task.done = state.is_done(task.id, task.done)
-
-
 def _count(tasks: list[Task]) -> tuple[int, int]:
     return (
         sum(1 for t in tasks if not t.done),
@@ -90,7 +67,7 @@ def build_view(
     result: MappingResult,
     now: datetime,
     periods: list[dict],
-    state: LocalState | None = None,
+    resolve_done: Callable[[str, bool], bool] | None = None,
 ) -> View:
     weekday_index = now.weekday()
     period = period_of(now, periods)
@@ -101,11 +78,17 @@ def build_view(
         now=now,
         mode=result.mode_used,
         issues=[i.message + (f"：{i.label}" if i.label else "") for i in result.issues],
-        accent=MODE_ACCENTS.get(result.mode_used, MODE_ACCENTS["week"]),
     )
 
-    all_tasks = [t for g in result.groups for t in g.tasks] + list(result.orphans)
-    _apply_state(all_tasks, state)
+    if resolve_done is not None:
+        def overlay(tasks: list[Task]) -> list[Task]:
+            return [replace(task, done=resolve_done(task.id, task.done)) for task in tasks]
+
+        result = replace(
+            result,
+            groups=[replace(group, tasks=overlay(group.tasks)) for group in result.groups],
+            orphans=overlay(result.orphans),
+        )
 
     if result.mode_used == MODE_MEMO:
         _build_memo_view(view, result)

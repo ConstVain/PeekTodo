@@ -2,11 +2,11 @@
   "version": 1,
   "source": {
     "type": "markdown",
-    "path": "docs/sample-plan.md",
+    "path": "peek_todo/assets/template/Example-plan_detail.md",
     "recursive": true
   },
   "mapping": {
-    "root_path": ["周计划"],
+    "root_path": ["目标与事项", "规划"],
     "mode": "week",
     "aliases": {}
   },

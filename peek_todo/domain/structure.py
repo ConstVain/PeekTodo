@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from dataclasses import dataclass, field
 
 from .model import Group, Issue, MappingResult, Node, Task
@@ -85,7 +86,7 @@ def _collect_tasks(node: Node, depth: int, group_label: str) -> list[Task]:
     return tasks
 
 
-def map_document(tree: Node, cfg: MappingConfig) -> MappingResult:
+def map_document(tree: Node, cfg: MappingConfig, *, today: date | None = None) -> MappingResult:
     mode = normalize_mode(cfg.mode)
     root, issues = resolve_root(tree, cfg.root_path)
     result = MappingResult(mode_configured=mode, mode_used=mode, issues=list(issues))
@@ -129,12 +130,12 @@ def map_document(tree: Node, cfg: MappingConfig) -> MappingResult:
             when = parse_when(child.text, cfg.vocabulary, cfg.aliases)
             result.groups.append(Group(label=child.text, when=when, tasks=tasks))
         else:
-            due = parse_date(child.text)
+            due = parse_date(child.text, today)
             result.groups.append(Group(label=child.text, when=None, due=due, tasks=tasks))
 
     # 周计划模式下一条时段也没认出来、却认出了日期 → 提示换成截止日模式
     if mode == MODE_WEEK and result.groups and not any(g.when for g in result.groups):
-        if any(parse_date(g.label) for g in result.groups):
+        if any(parse_date(g.label, today) for g in result.groups):
             result.issues.append(
                 Issue(
                     kind="structure",

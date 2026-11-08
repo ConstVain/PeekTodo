@@ -12,10 +12,11 @@ import json
 import sys
 from pathlib import Path
 
-from .config import Config, build_mapping, build_source
-from .report import build_report, render_report
+from .application.configuration import build_mapping, build_source
+from .storage.config import Config
+from .application.report import build_report, render_report
 from .sources.base import SourceError
-from .structure import map_document
+from .domain.structure import map_document
 
 
 def _config_from_args(args) -> Config:

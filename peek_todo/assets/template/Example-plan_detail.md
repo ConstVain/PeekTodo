@@ -1,14 +1,4 @@
-"""新建计划文档时用的模板。
-
-内容和结构对应"大学生日常"：长期目标 / 阶段计划 / 作息 / DDL / 一周排期。
-用户建完直接改名字和条目就行。
-"""
-
-from __future__ import annotations
-
-from pathlib import Path
-
-PLAN_TEMPLATE = """# 目标与事项
+# 目标与事项
 
 ## 长期目标
 
@@ -111,14 +101,3 @@ PLAN_TEMPLATE = """# 目标与事项
 * 周日晚上
 
   * 规划下周
-"""
-
-DEFAULT_FILENAME = "我的计划.md"
-
-
-def write_template(path: str | Path) -> Path:
-    """把模板写到指定路径（不存在则创建，已存在则覆盖）。"""
-    target = Path(path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(PLAN_TEMPLATE, encoding="utf-8")
-    return target

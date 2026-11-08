@@ -29,4 +29,3 @@ jobs:
       - name: 冒烟：命令能起来
         run: |
           python -m peek_todo --doctor --config config.example.json
-        continue-on-error: true

@@ -27,4 +27,3 @@ pip-install-*/
 pip-ephem-wheel-cache-*/
 *.err
 *.lnk
-!PeekTodo.lnk

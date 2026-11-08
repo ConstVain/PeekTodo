@@ -7,10 +7,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .model import MappingResult
-from .sources.base import FetchResult
-from .structure import MODE_LABELS, MODE_WEEK
-from .vocabulary import describe_date, describe_when
+from ..domain.model import MappingResult
+from ..sources.base import FetchResult
+from ..domain.structure import MODE_LABELS, MODE_WEEK
+from ..domain.vocabulary import describe_date, describe_when
 
 
 @dataclass

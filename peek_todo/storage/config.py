@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .json_file import write_json
+
 DEFAULT_PERIODS = [
     {"name": "上午", "start": "06:00"},
     {"name": "下午", "start": "12:00"},
@@ -44,12 +46,13 @@ class Config:
         if not p.exists():
             raise FileNotFoundError(f"配置文件不存在：{p}")
         # utf-8-sig：记事本另存会带 BOM，不能让它把配置读废
-        return cls(path=p, raw=json.loads(p.read_text(encoding="utf-8-sig")))
+        raw = json.loads(p.read_text(encoding="utf-8-sig"))
+        if not isinstance(raw, dict):
+            raise ValueError("config.json must contain a JSON object")
+        return cls(path=p, raw=raw)
 
     def save(self) -> None:
-        self.path.write_text(
-            json.dumps(self.raw, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-        )
+        write_json(self.path, self.raw)
 
     # ---- 取值（都带默认，缺字段不会炸） ----
 
@@ -88,34 +91,6 @@ class Config:
         return p
 
 
-def build_source(cfg: Config):
-    """按配置造数据源。类型不认识就抛错，由调用方显示成提示。"""
-    from .sources.base import SourceError
-    from .sources.markdown import MarkdownSource
-    from .sources.mubu import MubuSource
-
-    kind = (cfg.source.get("type") or "").lower()
-    if kind == "markdown":
-        path = cfg.source_path()
-        if path is None:
-            raise SourceError("配置里没有填 markdown 路径")
-        return MarkdownSource(path, recursive=bool(cfg.source.get("recursive", True)))
-    if kind == "mubu":
-        doc_id = cfg.source.get("docId")
-        if not doc_id:
-            raise SourceError("配置里没有填幕布文档 id")
-        return MubuSource(doc_id)
-    raise SourceError(f"不认识的数据源类型：{kind or '(空)'}")
-
-
-def build_mapping(cfg: Config):
-    from .structure import MappingConfig
-    from .vocabulary import Vocabulary
-
-    raw = cfg.mapping
-    return MappingConfig(
-        root_path=raw.get("root_path"),
-        mode=(raw.get("mode") or "A").upper(),
-        aliases=raw.get("aliases") or {},
-        vocabulary=Vocabulary.from_config(cfg.vocabulary),
-    )
+    def resolved_source(self) -> dict[str, Any]:
+        path = self.source_path() if self.source.get("type") == "markdown" else None
+        return {**self.source, "path": str(path)} if path is not None else self.source

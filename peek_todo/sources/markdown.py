@@ -11,11 +11,14 @@
 
 from __future__ import annotations
 
+import json
 import re
+from collections import Counter
+from hashlib import sha256
 from datetime import datetime
 from pathlib import Path
 
-from ..model import Node
+from ..domain.model import Node
 from .base import FetchResult, Source, SourceError
 
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
@@ -34,8 +37,20 @@ def clean_inline(text: str) -> str:
     return text.strip()
 
 
+def _node_id(*parts: str | int) -> str:
+    content = json.dumps(parts, ensure_ascii=False).encode("utf-8")
+    return "md2:" + sha256(content).hexdigest()
+
+
 def parse_markdown(text: str, *, doc_id: str = "md") -> Node:
-    doc = Node(id=f"{doc_id}:root", text="")
+    doc = Node(id=_node_id(doc_id), text="")
+    occurrences: Counter[tuple[str, str, str]] = Counter()
+
+    def node_id(parent: Node, kind: str, label: str) -> str:
+        key = (parent.id, kind, label)
+        occurrences[key] += 1
+        return _node_id(*key, occurrences[key])
+
     heading_stack: list[tuple[int, Node]] = [(0, doc)]
     item_stack: list[tuple[int, Node]] = []
 
@@ -64,8 +79,9 @@ def parse_markdown(text: str, *, doc_id: str = "md") -> Node:
             title = clean_inline(heading.group(2))
             while len(heading_stack) > 1 and heading_stack[-1][0] >= level:
                 heading_stack.pop()
-            node = Node(id=f"{doc_id}:h{lineno}", text=title)
-            heading_stack[-1][1].children.append(node)
+            parent = heading_stack[-1][1]
+            node = Node(id=node_id(parent, "heading", heading.group(2).strip()), text=title)
+            parent.children.append(node)
             heading_stack.append((level, node))
             item_stack.clear()
             continue
@@ -79,11 +95,11 @@ def parse_markdown(text: str, *, doc_id: str = "md") -> Node:
             if task:
                 done = task.group(1).lower() == "x"
                 body = task.group(2)
-            node = Node(id=f"{doc_id}:l{lineno}", text=clean_inline(body), done=done)
-
             while item_stack and item_stack[-1][0] >= indent:
                 item_stack.pop()
             parent = item_stack[-1][1] if item_stack else heading_stack[-1][1]
+            kind = "checkbox" if done is not None else "item"
+            node = Node(id=node_id(parent, kind, body.strip()), text=clean_inline(body), done=done)
             parent.children.append(node)
             item_stack.append((indent, node))
             continue
@@ -100,12 +116,11 @@ class MarkdownSource(Source):
 
     def _read_file(self, file: Path) -> Node:
         try:
-            text = file.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
-            text = file.read_text(encoding="utf-8", errors="replace")
+            text = file.read_text(encoding="utf-8-sig", errors="replace")
         except OSError as exc:
             raise SourceError(f"读不了文件 {file}：{exc}") from exc
-        return parse_markdown(text, doc_id=file.stem)
+        relative = file.relative_to(self.path) if self.path.is_dir() else Path(file.name)
+        return parse_markdown(text, doc_id=relative.as_posix())
 
     def fetch(self) -> FetchResult:
         if not self.path.exists():
@@ -122,13 +137,18 @@ class MarkdownSource(Source):
 
         root = Node(id="md:root", text=self.path.name)
         warnings: list[str] = []
+        stems = Counter(file.stem for file in files)
         for file in files:
             try:
                 subtree = self._read_file(file)
             except SourceError as exc:
                 warnings.append(str(exc))
                 continue
-            root.children.append(Node(id=f"{file.stem}:file", text=file.stem, children=subtree.children))
+            label = file.stem if stems[file.stem] == 1 else file.relative_to(self.path).as_posix()
+            root.children.append(Node(id=subtree.id, text=label, children=subtree.children))
+
+        if not root.children:
+            raise SourceError("\n".join(warnings))
 
         return FetchResult(
             tree=root,

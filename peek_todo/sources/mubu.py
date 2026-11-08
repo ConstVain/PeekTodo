@@ -12,7 +12,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from ..model import Node
+from ..domain.model import Node
 from .base import FetchResult, Source, SourceError
 
 DATA_ROOT = (

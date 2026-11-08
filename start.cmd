@@ -1,11 +1,8 @@
 @echo off
-rem Double-click to start PeekTodo in the background (no console window).
-rem Closing this window does not stop the app; use the tray icon to quit.
-cd /d "%~dp0"
-
-where pythonw >nul 2>nul
-if %errorlevel%==0 (
-    start "" pythonw -m peek_todo
-) else (
-    start "" python -m peek_todo --detach
+rem Launch the source checkout that contains this script.
+cd /d "%~dp0" || exit /b 1
+if not exist "peek_todo\__main__.py" (
+    echo PeekTodo source files not found next to this script.
+    exit /b 1
 )
+python -m peek_todo --detach %*

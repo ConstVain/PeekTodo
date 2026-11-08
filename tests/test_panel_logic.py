@@ -8,11 +8,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from peek_todo.edge import EdgeDetector, Rect
-from peek_todo.model import Group, MappingResult, Task, When
-from peek_todo.selection import build_view
-from peek_todo.state import LocalState
-from peek_todo.structure import MODE_DUE, MODE_WEEK
+from peek_todo.domain.edge import EdgeDetector, Rect
+from peek_todo.domain.model import Group, MappingResult, Task, When
+from peek_todo.domain.selection import build_view
+from peek_todo.storage.state import LocalState
+from peek_todo.domain.structure import MODE_DUE, MODE_WEEK
 
 SCREEN = Rect(0, 0, 1920, 1080)
 PERIODS = [
@@ -79,7 +79,7 @@ def test_pinned_click_distance():
     """钉住时：贴近面板的点击不算"点到别处"，远处的才算。"""
     from PyQt5.QtCore import QPoint, QRect
 
-    from peek_todo.app import far_from_panel
+    from peek_todo.ui.desktop import far_from_panel
 
     rect = QRect(1560, 200, 360, 600)  # 右边缘贴屏幕的默认位置
     assert not far_from_panel(rect, QPoint(1800, 400))
@@ -134,6 +134,6 @@ def test_local_state_overrides_and_expires(tmp_path):
 def test_view_applies_local_state(tmp_path):
     state = LocalState(tmp_path / "state.json", "x")
     state.set_done("a", True)
-    view = build_view(_week_result(), datetime(2026, 11, 2, 14, 0), PERIODS, state)
+    view = build_view(_week_result(), datetime(2026, 11, 2, 14, 0), PERIODS, state.is_done)
     assert view.current[0].done is True
     assert view.open_count == 1

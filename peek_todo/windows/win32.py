@@ -10,6 +10,7 @@ Anaconda 环境里经常有两份 pywin32：conda 放在 `Library\\bin` 的旧 D
 from __future__ import annotations
 
 import ctypes
+import sys
 import sysconfig
 from pathlib import Path
 
@@ -23,7 +24,8 @@ def preload() -> None:
     folder = _dll_dir()
     if not folder.is_dir():
         return
-    for name in ("pywintypes312.dll", "pythoncom312.dll"):
+    version = f"{sys.version_info.major}{sys.version_info.minor}"
+    for name in (f"pywintypes{version}.dll", f"pythoncom{version}.dll"):
         path = folder / name
         if not path.exists():
             continue

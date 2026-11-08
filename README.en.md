@@ -1,162 +1,102 @@
 # PeekTodo
 
-A todo panel that lives on the right edge of your screen. Move your mouse to the far right of the primary display and it slides out with what you should be doing right now; move away and it slides back. Click it to pin, drag a corner to resize. Tray-resident, doesn't steal focus unless you click it, optional autostart.
-
 [中文说明](README.md)
 
-![panel](docs/screenshot-panel.png)
+A Windows to-do panel for weekly plans, deadlines, and memos. Move the pointer to the far right of your primary screen to reveal it. Move away to retract it. PeekTodo reads local Markdown files or backups from the Mubu desktop app.
 
-## What it solves
+## Install and run
 
-You have a weekly plan, but you are not going to open your notes app just to check what's next.
-PeekTodo pins it to the screen edge — one flick of the mouse and you know.
+### First-time setup
 
-**Sources**: local Markdown (lists) or a Mubu document.
-**Read-only**: it never modifies your files. Checkboxes on the panel are local and expire after 7 days.
+You need **Windows 10 or 11**, **Python 3.10 or later**, and **Git**. Run these four lines in PowerShell.
 
-## Quick start
-
-```bash
+```powershell
 git clone https://github.com/ConstVain/PeekTodo.git
 cd PeekTodo
-pip install .
-peektodo
+python -m pip install -e .
+.\start.cmd
 ```
 
-Or run straight from source:
+In Settings, choose a source and mode, leave **Desktop shortcut** checked, and click **Save**. This creates the **PeekTodo** icon on your desktop.
 
-```bash
-pip install -r requirements.txt
-python -m peek_todo
-```
+### Everyday use
 
-Requires Python 3.10+ and Windows 10/11. The first launch opens the settings panel: pick a source, click a node in the structure tree to use as root, choose a mode, save. No document yet? Hit “新建 Markdown 文档” — it writes a sample template and opens it for editing. Reopen it any time from the tray menu; refresh interval, accent colour, autostart and the desktop shortcut live there too.
+**Double-click the PeekTodo desktop icon**. The app appears in the system tray. Move your pointer to the right edge of your primary screen to open the panel. To launch automatically when you sign in to Windows, enable **Start at login** in Settings.
 
-![settings](docs/screenshot-settings.png)
+## Set up a source
 
-Afterwards (when launched from a terminal it moves itself to the background, so closing the terminal does not kill it):
+- **Existing Markdown**. Choose a file, select the root in the structure tree, choose a mode, and save.
+- **New Markdown**. The template picker defaults to `Example-plan_simple.md`. After confirming the template, the save dialog suggests a filename such as `261108_目标与事项.md`. PeekTodo opens the new document for editing and selects it as the source. The built-in plan templates also select the plan root and weekly mode. Saving edits refreshes the structure tree automatically. Creating and choosing Markdown files share the last-used folder.
+- **Mubu**. Open the document in the Mubu desktop app so it has a local backup, then select it from the Mubu document list in PeekTodo.
 
-```bash
-peektodo                 # normal use (tray resident)
-peektodo --setup         # reconfigure
-```
+<p align="center">
+  <img src="docs/screenshot-settings.png" alt="PeekTodo Settings in Cream, with the data source, structure tree, and accent controls" width="820">
+</p>
 
-Installed as a package, config lives in `%APPDATA%\PeekTodo\`. Running from source keeps it in the repo root (portable).
+Reopen Settings from the tray. Choose Cream or Dark, and let the accent follow the current mode, choose a preset, or pick a custom color and add it to the list. Use the trash icon to remove a color. **Refresh now** in the tray menu rereads the current source.
 
-### Desktop shortcut
-
-Saving the settings for the first time drops a `PeekTodo` shortcut on your Desktop (app icon, starts in the background with no console). Uncheck “桌面快捷方式” in the settings to remove it.
-
-### Updating
-
-Already have a copy? Update **inside the folder you originally cloned**, don't clone again:
-
-```bash
-cd PeekTodo
-git pull
-python -m pip install --no-build-isolation --force-reinstall .   # skip if you installed with pip install -e .
-```
-
-Then quit from the tray icon and start it again.
-
-## Using it
+## Use the panel
 
 | Action | Result |
-|---|---|
-| Mouse to the far right edge | panel slides out |
-| Move away | slides back |
-| **Click the panel** | pins it: takes focus and stays when the mouse moves away, unless you click somewhere else |
-| **Drag the top-left / bottom-left corner** | resizes the panel, text scales with it |
-| Click a checkbox | tick/untick (local to the panel, never touches the source file) |
-| Click far from the panel / Esc | unpin and retract |
+| --- | --- |
+| Move to the far right edge of the primary display | Reveal the panel |
+| Move away | Retract the panel |
+| Click the panel | Pin it |
+| Click away from the panel or press Esc | Unpin it |
+| Drag the top-left or bottom-left corner | Resize the panel and scale its text |
+| Click the marker next to an item | Toggle its checkmark |
 
-The size you drag to is remembered (`panel.width` / `panel.height` in `config.json`).
-
-## Three modes
-
-| Mode | Direct children of the root | Panel shows | Good for |
-|---|---|---|---|
-| **Week plan** | time slots (`Mon afternoon`) | current slot on top, today below | class/work schedules |
-| **Deadline** | dates (`Nov 3`) | overdue + due today on top, upcoming below | assignments, deliverables |
-| **Memo** | items directly, no grouping | everything, no filtering | this-week lists, long-term reminders |
-
-The first two share the same shape (root → groups → items); only the **interpretation of the group title** differs — a time slot of the week, or a calendar date. Memo has no groups.
+### Three modes
 
 <table>
 <tr>
-<td width="33%"><b>Week plan</b>: current slot on top, today below<br><img src="docs/screenshot-panel.png"></td>
-<td width="33%"><b>Deadline</b>: overdue in red, rest by date<br><img src="docs/screenshot-due.png"></td>
-<td width="33%"><b>Memo</b>: one standing list<br><img src="docs/screenshot-memo.png"></td>
+<th width="33%">Weekly plan</th>
+<th width="33%">Deadline</th>
+<th width="33%">Memo</th>
+</tr>
+<tr>
+<td><img src="docs/screenshot-panel.png" alt="Weekly plan with the current slot above all of today's tasks"></td>
+<td><img src="docs/screenshot-due.png" alt="Deadline panel with overdue items in red and upcoming deadlines below"></td>
+<td><img src="docs/screenshot-memo.png" alt="Memo panel showing all items in order"></td>
+</tr>
+<tr>
+<td>Group items by time slot, such as <code>周一下午</code> (Monday afternoon). The current slot appears above the rest of today's plan.</td>
+<td>Group items by date, such as <code>11月9日</code> (November 9) or <code>明天</code> (tomorrow). Overdue and today's items appear above upcoming deadlines.</td>
+<td>List items directly under the root. The panel shows the whole list.</td>
 </tr>
 </table>
 
-Dates understood: `11月2日`, `11月3号`, `2026-11-02`, `11/2`, `今天`(today), `明天`(tomorrow), `后天`(day after).
-Time slots: `周一下午`, `星期二上午`, `礼拜三`, `周7 早上` — or add your own aliases under `vocabulary` in `config.json`.
+Add weekday and time-slot aliases under `vocabulary` in `config.json`. Unrecognised groups still appear in the panel and are excluded from time filtering.
 
-Pick the wrong mode and you won't get an empty panel: week-plan mode will suggest switching when all titles are dates, and a flat list automatically falls back to memo.
+## Data and troubleshooting
 
-## Why no fixed syntax
+- Panel checkmarks leave the source document intact. They live in `%APPDATA%\PeekTodo\.state.json` and expire after seven days.
+- A source checkout prefers its own `config.json`. Without one, it can reuse `%APPDATA%\PeekTodo\config.json`. The installed copy uses the configuration in the user directory.
+- PeekTodo makes no network requests. For Mubu, the panel's timestamp comes from the local backup. Recent edits appear after that backup updates. If a read fails, the panel shows a warning and keeps the last successful data from the current session.
 
-People write things differently (`周一下午` / `礼拜一下午` / `下午`). PeekTodo doesn't ask you to change your document:
+<details>
+<summary>Update PeekTodo or diagnose a data source</summary>
 
-- Time words are recognised through a configurable vocabulary (`vocabulary` in `config.json`)
-- Titles it can't parse are **still displayed** — they just don't take part in time filtering, and the panel flags them
-- `--doctor` prints exactly what the parser understood, so a mismatch is visible at a glance
+Quit PeekTodo from the tray, run `git pull` in the original checkout, and double-click the desktop icon again. If dependencies change, rerun `python -m pip install -e .` in the checkout. If you switch to a different checkout, launch from the new folder and save Settings once to point the desktop shortcut to that copy.
 
-```
-source  docs/sample-plan.md
-root    周计划
-mode    Week plan
-──────────────────────────────────────────────
-✓ 周一下午                  Monday afternoon  ·  4 items (2 levels)
-! 待定                      no time found     ·  1 item
-──────────────────────────────────────────────
-8 items, 1 done
+From the checkout, run the following commands to check which copy launches or see what PeekTodo recognises in the bundled sample. Substitute your own configuration path to diagnose your source.
+
+```powershell
+python -m peek_todo --where
+python -m peek_todo --doctor --config config.example.json
 ```
 
-## Layout
-
-```
-peek_todo/
-├─ model.py         Node / Task / Group
-├─ vocabulary.py    time-slot and date recognition (vocabulary configurable)
-├─ structure.py     root node + three modes
-├─ selection.py     slices by current time
-├─ state.py         local checkboxes (never touches the source)
-├─ edge.py          edge-hotzone detector
-├─ report.py        parse report
-├─ doctor.py        CLI diagnostics
-├─ autostart.py     autostart via HKCU Run
-├─ shortcut.py      desktop shortcut
-├─ opener.py        open the source file
-├─ template.py      template used by "new Markdown document"
-├─ win32.py         pywin32 loading fallback, window styles, key state
-├─ app.py           entry point: window, tray, polling
-├─ assets/          tray icon and app icon
-├─ sources/
-│  ├─ markdown.py   headings + list items
-│  └─ mubu.py       local Mubu backup
-└─ ui/
-   ├─ panel.py      the panel (with drag-to-resize)
-   └─ settings.py   settings panel (also first run)
-```
+</details>
 
 ## Development
 
-```bash
-pip install -r requirements.txt
-python -m pytest tests -q
+```powershell
+python -m pip install -e ".[dev]"
+python -m pytest -q
 ```
 
-`verify.cmd` runs the tests plus a diagnostic on both bundled sample sources.
-
-## Notes and limitations
-
-- **Read-only**: never writes to your Markdown or Mubu document. Checkboxes are local.
-- **No network**: the app makes no network requests.
-- **Mubu source** reads the desktop client's local cache, an undocumented format that may break with client updates. On failure it keeps the last good data and shows a warning instead of going blank.
-- Windows 10/11 only (relies on Win32 `WS_EX_NOACTIVATE` and cursor polling).
+The [architecture and code reading guide (Chinese)](docs/architecture.md) follows a refresh and a checkmark through the code.
 
 ## License
 
-GPL-3.0 — see [LICENSE](LICENSE). PyQt5 is GPL/commercially dual-licensed, so the project is released under GPL.
+[GPL-3.0](LICENSE). See the [third-party notices](THIRD_PARTY_NOTICES.md) for the bundled fonts.

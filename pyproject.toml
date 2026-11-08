@@ -36,11 +36,11 @@ peektodo = "peek_todo.app:main"
 Homepage = "https://github.com/ConstVain/PeekTodo"
 Issues = "https://github.com/ConstVain/PeekTodo/issues"
 
-[tool.setuptools]
-packages = ["peek_todo", "peek_todo.sources", "peek_todo.ui"]
+[tool.setuptools.packages.find]
+include = ["peek_todo", "peek_todo.*"]
 
 [tool.setuptools.package-data]
-peek_todo = ["assets/*.png", "assets/*.ico", "assets/fonts/*.ttf", "assets/fonts/*.otf"]
+peek_todo = ["assets/*.png", "assets/*.ico", "assets/*.svg", "assets/fonts/*.ttf", "assets/fonts/*.otf", "assets/template/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

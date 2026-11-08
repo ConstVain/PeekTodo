@@ -10,10 +10,10 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from peek_todo.model import Node
+from peek_todo.domain.model import Node
 from peek_todo.sources.markdown import parse_markdown
-from peek_todo.structure import MODE_DUE, MODE_MEMO, MODE_WEEK, MappingConfig, map_document
-from peek_todo.vocabulary import Vocabulary, parse_date, parse_when
+from peek_todo.domain.structure import MODE_DUE, MODE_MEMO, MODE_WEEK, MappingConfig, map_document
+from peek_todo.domain.vocabulary import Vocabulary, parse_date, parse_when
 
 SAMPLE = """# 周计划
 
