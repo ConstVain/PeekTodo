@@ -30,7 +30,7 @@ python -m pip install -e .
 - 如果使用 **幕布**，先在幕布桌面端打开文档，让本机生成备份，再从 PeekTodo 的「幕布文档」列表里选择。
 
 <p align="center">
-  <img src="docs/screenshots/settings.png" alt="米白主题的 PeekTodo 设置窗口，显示数据源、结构树和强调色选项" width="820">
+  <img src="docs/screenshots/settings-panel-reset.png" alt="PeekTodo 设置窗口，显示与行为区块右上角有复位滑窗大小按钮" width="820">
 </p>
 
 随时可以从托盘打开「设置…」。配色可在米白和深色之间切换。强调色可以跟随模式、选择预设色，或在「自定义…」中选色并添加到列表。列表里的颜色可以用右侧的垃圾桶删除。托盘里的「立即刷新」会重新读取当前数据源。

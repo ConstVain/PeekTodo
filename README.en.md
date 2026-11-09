@@ -30,7 +30,7 @@ In Settings, choose a source and mode, leave **Desktop shortcut** checked, and c
 - **Mubu**. Open the document in the Mubu desktop app so it has a local backup, then select it from the Mubu document list in PeekTodo.
 
 <p align="center">
-  <img src="docs/screenshots/settings.png" alt="PeekTodo Settings in Cream, with the data source, structure tree, and accent controls" width="820">
+  <img src="docs/screenshots/settings-panel-reset.png" alt="PeekTodo Settings with the Reset panel size button at the top right of Display and Behavior" width="820">
 </p>
 
 Reopen Settings from the tray. Choose Cream or Dark, and let the accent follow the current mode, choose a preset, or pick a custom color and add it to the list. Use the trash icon to remove a color. **Refresh now** in the tray menu rereads the current source.
