@@ -35,6 +35,8 @@ In Settings, choose a source and mode, leave **Desktop shortcut** checked, and c
 
 Reopen Settings from the tray. Choose Cream or Dark, and let the accent follow the current mode, choose a preset, or pick a custom color and add it to the list. Use the trash icon to remove a color. **Refresh now** in the tray menu rereads the current source.
 
+If connecting or switching an external monitor leaves the panel incorrectly sized, click **Reset panel size** in the upper-right corner of **Display and Behavior** in Settings. The panel immediately restores its default width and automatic height and returns to the right edge of the current primary display.
+
 ## Use the panel
 
 | Action | Result |

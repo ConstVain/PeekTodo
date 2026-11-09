@@ -33,6 +33,12 @@ DEFAULT_PANEL = {
 DEFAULT_BEHAVIOR = {"refreshMs": 5000, "autostart": False, "desktopShortcut": True}
 
 
+def default_panel_size(panel: dict[str, Any]) -> dict[str, Any]:
+    """Remove size overrides while keeping the rest of the panel settings."""
+    return {key: value for key, value in panel.items()
+            if key not in ("width", "height", "heightRatio", "maxHeight")}
+
+
 @dataclass
 class Config:
     path: Path

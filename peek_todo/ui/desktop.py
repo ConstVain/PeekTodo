@@ -7,14 +7,14 @@ import traceback
 from datetime import datetime
 from functools import wraps
 
-from PyQt5.QtCore import QTimer
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QCursor, QIcon
 from PyQt5.QtWidgets import QAction, QApplication, QMenu, QMessageBox, QSystemTrayIcon
 
 from ..application.session import TaskSession
 from ..domain.edge import EdgeDetector, Rect
 from ..sources.base import SourceError
-from ..storage.config import Config
+from ..storage.config import Config, default_panel_size
 from ..storage.paths import assets_dir, state_path
 from ..windows import autostart
 from ..windows.win32 import left_button_down, set_no_activate
@@ -27,6 +27,10 @@ from .theme import get as get_theme, panel_accent
 def far_from_panel(rect, pos, pad: int = 60) -> bool:
     """点击位置是否离面板足够远（用来判断"点到别处去了"）。"""
     return not rect.adjusted(-pad, -pad, pad, pad).contains(pos)
+
+
+def _default_panel_height(screen_height: int, panel: dict) -> int:
+    return min(int(screen_height * float(panel["heightRatio"])), int(panel["maxHeight"]))
 
 
 def safe_slot(func):
@@ -51,15 +55,13 @@ class DesktopController:
         self.app = app
         self.forced = force_shown
         self.cfg = cfg
+        self._settings_dialog: SettingsDialog | None = None
 
         panel_cfg = cfg.panel
         self.width = int(panel_cfg["width"])
         geo = app.primaryScreen().geometry()
         self.screen = Rect(geo.x(), geo.y(), geo.width(), geo.height())
-        default_height = min(
-            int(geo.height() * float(panel_cfg["heightRatio"])),
-            int(panel_cfg["maxHeight"]),
-        )
+        default_height = _default_panel_height(geo.height(), panel_cfg)
         height = int(panel_cfg.get("height") or default_height)
 
         self.panel = Panel(
@@ -249,6 +251,25 @@ class DesktopController:
         self.panel.set_theme(get_theme(theme_key, panel.get("colors")))
         self.refresh()
 
+    @safe_slot
+    def reset_panel_size(self) -> None:
+        panel = default_panel_size(self.cfg.raw.get("panel") or {})
+        updated = Config(self.cfg.path, {**self.cfg.raw, "panel": panel})
+        try:
+            updated.save()
+        except OSError as exc:
+            QMessageBox.warning(self.panel, "复位大小保存失败", str(exc))
+            return
+        self.cfg.raw["panel"] = panel
+        geo = self.app.primaryScreen().geometry()
+        defaults = updated.panel
+        self.screen = Rect(geo.x(), geo.y(), geo.width(), geo.height())
+        self.width = min(int(defaults["width"]), geo.width())
+        self.panel.reset_size(self.width, _default_panel_height(geo.height(), defaults), geo)
+        self._sync_detector()
+        if self._settings_dialog is not None:
+            self._settings_dialog.panel_size_reset_saved()
+
     def add_section(self) -> None:
         self.rerun_wizard(add_section=True)
 
@@ -257,7 +278,7 @@ class DesktopController:
         sections = self.cfg.sections
         if not 0 <= index < len(sections):
             return
-        sections.pop(index)
+        removed = sections.pop(index)
         mapping = {**self.cfg.mapping, "sections": sections}
         cfg = Config(self.cfg.path, {**self.cfg.raw, "mapping": mapping})
         try:
@@ -265,22 +286,33 @@ class DesktopController:
         except OSError as exc:
             QMessageBox.warning(self.panel, "移除区块失败", str(exc))
             return
-        self.cfg = cfg
+        self.cfg.raw["mapping"] = mapping
         self.session.remove_section(index)
+        if self._settings_dialog is not None:
+            self._settings_dialog.forget_section(removed)
         self.refresh()
 
     @safe_slot
     def rerun_wizard(self, *, add_section: bool = False) -> None:
+        if self._settings_dialog is not None:
+            self._settings_dialog.raise_()
+            self._settings_dialog.activateWindow()
+            return
         dialog = SettingsDialog(self.panel if add_section else None, add_section=add_section)
+        self._settings_dialog = dialog
         try:
             dialog.prefill(self.cfg.raw, self.cfg.path.parent)
             if not add_section:
+                # A parentless window-modal dialog leaves the separate panel interactive.
+                dialog.setWindowModality(Qt.WindowModal)
                 dialog.theme_combo.setToolTip("选中配色后立即应用并保存")
                 dialog.theme_selected.connect(self._save_theme)
+                dialog.panel_size_reset_requested.connect(self.reset_panel_size)
             if dialog.exec_() != SettingsDialog.Accepted or not dialog.result_config:
                 return
             cfg = Config(self.cfg.path, dialog.result_config)
         finally:
+            self._settings_dialog = None
             dialog.deleteLater()
         try:
             session = TaskSession(cfg, state_path())

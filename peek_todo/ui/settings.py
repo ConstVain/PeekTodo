@@ -32,7 +32,7 @@ from PyQt5.QtWidgets import (
 )
 
 from ..application.configuration import build_source
-from ..storage.config import Config, DEFAULT_BEHAVIOR, DEFAULT_PANEL
+from ..storage.config import Config, DEFAULT_BEHAVIOR, DEFAULT_PANEL, default_panel_size
 from ..storage.paths import assets_dir, user_data_dir
 from ..domain.model import Node
 from ..windows.opener import open_source
@@ -91,6 +91,15 @@ QPushButton#primary {{
 QPushButton#primary:hover {{ background: {color}; }}
 QPushButton#ghost {{ background: transparent; border-color: {theme.card_border}; }}
 QPushButton#ghost:hover, QPushButton#ghost:focus {{ border-color: {color}; }}
+QPushButton#resetPanelSize {{
+    background: transparent; color: {theme.text_dim};
+    border-color: {theme.card_border}; border-radius: 5px;
+    padding: 2px 8px; font-size: 11px;
+}}
+QPushButton#resetPanelSize:focus {{ border-color: {color}; }}
+QPushButton#resetPanelSize:pressed {{
+    background: {theme.chip_bg}; color: {theme.text}; border-color: {color};
+}}
 QPushButton:focus, QComboBox:focus, QComboBox:hover {{ border-color: {color}; }}
 QTreeWidget {{
     background: {theme.card_bottom}; color: {theme.text_soft}; border: 1px solid {theme.card_border};
@@ -144,7 +153,7 @@ def _swatch(color: str, border: str) -> QIcon:
 class Section(QFrame):
     """带标题的卡片容器。"""
 
-    def __init__(self, title: str, parent=None):
+    def __init__(self, title: str, parent=None, *, action: QWidget | None = None):
         super().__init__(parent)
         self.setObjectName("section")
         outer = QVBoxLayout(self)
@@ -152,7 +161,14 @@ class Section(QFrame):
         outer.setSpacing(10)
         label = QLabel(title)
         label.setObjectName("sectionTitle")
-        outer.addWidget(label)
+        if action is None:
+            outer.addWidget(label)
+        else:
+            header = QHBoxLayout()
+            header.addWidget(label)
+            header.addStretch(1)
+            header.addWidget(action)
+            outer.addLayout(header)
         self.body = QVBoxLayout()
         self.body.setSpacing(8)
         outer.addLayout(self.body)
@@ -160,6 +176,7 @@ class Section(QFrame):
 
 class SettingsDialog(QDialog):
     theme_selected = pyqtSignal(str)
+    panel_size_reset_requested = pyqtSignal()
 
     def __init__(self, parent=None, *, add_section: bool = False):
         super().__init__(parent)
@@ -175,6 +192,7 @@ class SettingsDialog(QDialog):
         self._restoring = False
         # 已有的面板设置（宽度/高度等），保存时原样带回去，别被默认值覆盖
         self._original: dict = {}
+        self._reset_panel_size = False
         self._custom_accent: str | None = None
         self._saved_accents: dict[str, str] = {}
         self._hidden_accents: set[str] = set()
@@ -335,8 +353,20 @@ class SettingsDialog(QDialog):
             self._sections.pop(index)
             self._show_sections()
 
+    def forget_section(self, section: dict) -> None:
+        if section in self._sections:
+            self._sections.remove(section)
+            self._show_sections()
+
     def _appearance_section(self) -> Section:
-        section = Section("显示与行为")
+        reset_size = QPushButton("复位滑窗大小")
+        reset_size.setObjectName("resetPanelSize")
+        reset_size.setToolTip("恢复默认宽度和自动高度")
+        reset_size.setAutoDefault(False)
+        reset_size.setFocusPolicy(Qt.TabFocus)
+        reset_size.setCursor(Qt.PointingHandCursor)
+        reset_size.clicked.connect(self._request_panel_size_reset)
+        section = Section("显示与行为", action=reset_size)
 
         row1 = QHBoxLayout()
         row1.setSpacing(10)
@@ -371,9 +401,17 @@ class SettingsDialog(QDialog):
 
         return section
 
+    def _request_panel_size_reset(self) -> None:
+        self._reset_panel_size = True
+        self.panel_size_reset_requested.emit()
+
+    def panel_size_reset_saved(self) -> None:
+        self._reset_panel_size = False
+
     def _panel_preferences(self) -> dict:
+        original = self._original.get("panel") or {}
         panel = {
-            **(self._original.get("panel") or {}),
+            **(default_panel_size(original) if self._reset_panel_size else original),
             "theme": self.theme_combo.currentData(),
             "accent": self.accent_combo.currentData(),
         }
@@ -692,6 +730,7 @@ class SettingsDialog(QDialog):
         behavior = {**DEFAULT_BEHAVIOR, **(config.get("behavior") or {})}
         panel = {**DEFAULT_PANEL, **(config.get("panel") or {})}
         self._original = config
+        self._reset_panel_size = False
         if config_dir is not None:
             self._config_dir = config_dir
         self._sections = Config(self._config_dir / "config.json", config).sections

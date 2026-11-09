@@ -375,6 +375,23 @@ class Panel(QWidget):
         if not self._manual_size:
             self.fit_height()
 
+    def reset_size(self, width: int, height: int, screen_geometry) -> None:
+        self._anim.stop()
+        self.abort_drag()
+        self._drag_dy = 0
+        self._explicit_height = self._manual_size = False
+        self._max_h = height
+        self._screen_geo = screen_geometry
+        self._scale = max(0.75, min(width / self.BASE_WIDTH, 1.7))
+        x = screen_geometry.x() + screen_geometry.width() - width
+        y = screen_geometry.y() + (screen_geometry.height() - height) // 2
+        self._apply_geometry(x, y, width, height)
+        self._restyle()
+        if self._last_view is not None:
+            self.render(self._last_view, self._last_meta or {})
+        else:
+            self.fit_height()
+
     def set_theme(self, theme: Theme) -> None:
         """换配色：重刷卡片/滚动条样式，再把当前内容重画一遍。"""
         if theme is self.theme:
@@ -869,7 +886,7 @@ class Panel(QWidget):
         content.activate()
         self.card.layout().activate()
         wanted = self.card.layout().sizeHint().height() + content.sizeHint().height()
-        target = max(self._min_h, min(wanted, self._max_h))
+        target = min(self._max_h, max(self._min_h, wanted))
         if target == self._height:
             return
         self._height = target

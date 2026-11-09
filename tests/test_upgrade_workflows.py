@@ -635,3 +635,81 @@ def test_panel_plus_appends_and_persists_sections(tmp_path, monkeypatch):
         controller.panel.deleteLater()
         controller.tray.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+
+def test_reset_panel_size_uses_current_primary_screen_and_persists_defaults(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from PyQt5.QtCore import QCoreApplication, QEvent, QPoint, QRect, Qt, QTimer
+    from PyQt5.QtTest import QTest
+    from PyQt5.QtWidgets import QApplication, QPushButton, QSystemTrayIcon
+
+    from peek_todo.domain.edge import Rect
+    from peek_todo.storage.config import DEFAULT_PANEL
+    from peek_todo.ui import desktop
+    from peek_todo.windows import shortcut
+
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setattr(QSystemTrayIcon, "show", lambda self: None)
+    monkeypatch.setattr(desktop.autostart, "is_enabled", lambda: False)
+    monkeypatch.setattr(shortcut, "desktop_path", lambda: tmp_path / "absent.lnk")
+    monkeypatch.setattr(desktop, "state_path", lambda: tmp_path / ".state.json")
+    app = QApplication.instance() or QApplication([])
+    doc = tmp_path / "plan.md"
+    doc.write_text("# Plan\n- Task", encoding="utf-8")
+    config = Config(tmp_path / "config.json", {
+        "source": {"type": "markdown", "path": doc.name},
+        "mapping": {"root_path": ["Plan"], "mode": "memo"},
+        "panel": {"width": 1600, "height": 1200, "heightRatio": 0.95, "maxHeight": 1300,
+                  "theme": "dark", "accent": "teal", "pollMs": 55},
+    })
+    config.save()
+
+    controller = desktop.DesktopController(app, config, force_shown=True)
+    original_show_event = desktop.SettingsDialog.showEvent
+    pinned_while_settings_open = []
+
+    def show_settings(dialog, event):
+        original_show_event(dialog, event)
+
+        def click_reset_and_pin():
+            try:
+                dialog.findChild(QPushButton, "resetPanelSize").click()
+                QTest.mouseClick(controller.panel.windowHandle(), Qt.LeftButton, pos=QPoint(100, 100))
+                pinned_while_settings_open.append(controller.panel.is_pinned())
+            finally:
+                dialog.reject()
+
+        QTimer.singleShot(0, click_reset_and_pin)
+
+    monkeypatch.setattr(desktop.SettingsDialog, "showEvent", show_settings)
+    # The monitor layout changes after the controller is constructed.
+    screen = QRect(1920, 40, 1280, 720)
+    controller.app = SimpleNamespace(primaryScreen=lambda: SimpleNamespace(geometry=lambda: screen))
+    try:
+        assert controller.panel.height() == 1200
+        settings = next(action for action in controller.tray.contextMenu().actions()
+                        if action.text() == "设置…")
+        settings.trigger()
+        app.processEvents()
+
+        assert pinned_while_settings_open == [True]
+        rect = controller.panel.geometry()
+        width = DEFAULT_PANEL["width"]
+        assert rect.width() == width
+        assert rect.height() <= int(screen.height() * DEFAULT_PANEL["heightRatio"])
+        assert rect.right() == screen.right()
+        assert screen.contains(rect)
+        assert controller.screen == Rect(*screen.getRect())
+        assert controller.detector.panel_rect(controller.screen) == Rect(*rect.getRect())
+
+        saved = Config.load(config.path)
+        assert saved.raw["panel"] == {"theme": "dark", "accent": "teal", "pollMs": 55}
+        assert saved.mapping == config.mapping
+        assert saved.source == config.source
+    finally:
+        for timer in (controller.tick_timer, controller.refresh_timer, controller.clock_timer):
+            timer.stop()
+        controller.panel.close()
+        controller.panel.deleteLater()
+        controller.tray.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
