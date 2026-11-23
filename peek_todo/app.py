@@ -47,14 +47,15 @@ def main(argv: list[str] | None = None) -> int:
         # 已经在跑了。开机自启带 --silent，静默退出；手动双击则明确告诉用户
         if "--silent" not in argv:
             pid = running_instance_pid()
-            who = f"（进程 PID {pid}）" if pid else ""
+            recovery = (
+                f"\n\n如果托盘无法退出，请在任务管理器中确认 PID {pid} 对应 PeekTodo，再结束该进程。"
+                if pid else ""
+            )
             QMessageBox.information(
                 None,
                 "PeekTodo 已在运行",
-                f"面板已经在跑了{who}，如果你要切换版本，请先从托盘退出当前实例，再启动这一份。\n\n"
-                "如果它卡住了、看不到面板：在任务管理器里结束这个进程，"
-                "或者用 peektodo --force 强制再开一个。\n\n"
-                "（托盘图标在右下角，右键可以退出或重新设置）",
+                "请右键点击系统托盘中的 PeekTodo 图标，选择「退出」，再从要使用的目录启动。"
+                f"{recovery}",
             )
         return 0
 

@@ -23,6 +23,32 @@ In Settings, choose a source and mode, leave **Desktop shortcut** checked, and c
 
 **Double-click the PeekTodo desktop icon**. The app appears in the system tray. Move your pointer to the right edge of your primary screen to open the panel. To launch automatically when you sign in to Windows, enable **Start at login** in Settings.
 
+## Update PeekTodo
+
+### Update in place
+
+1. Right-click the PeekTodo icon in the system tray and choose **Quit**.
+2. Open PowerShell in the **original PeekTodo checkout**. You can find it under **Start in** in the desktop shortcut’s **Properties**. Use the Python environment you originally installed with and run these commands in order.
+
+   ```powershell
+   git pull --ff-only
+   python -m pip install -e .
+   ```
+
+3. After both commands succeed, double-click your existing **PeekTodo** desktop icon or run `.\start.cmd` from that checkout. The app continues to use your configuration, checkmarks, and launch entries for that folder.
+
+### Switch to a different folder or replace an older copy
+
+If you originally downloaded a ZIP, use the `git clone` command in First-time setup to prepare a checkout, then follow these steps.
+
+1. Quit the old copy. Run `.\start.cmd --where` in the old folder and back up the configuration and checkmark files it lists. Copy the configuration to the new checkout if it lives in the old program folder. Files in `%APPDATA%\PeekTodo` can stay there for the new copy to use.
+   Older versions may also have a checkmark file in the old folder. Back it up and keep the original desktop shortcut in place until the new copy launches, so it can find the file and import compatible checkmarks.
+2. In the new checkout, run `python -m pip install -e .` with the Python environment you intend to keep using, then run `.\start.cmd --setup`. Verify the source and root node. If your Markdown source used a relative path, select the original document again in Settings.
+3. Enable **Desktop shortcut**, set **Start at login** to your preference, and click **Save**. This points the standard desktop shortcut and, if enabled, the login startup entry to the new folder.
+4. Quit the current instance before relaunching from the desktop icon. In the shortcut’s **Properties**, check that **Start in** points to the new folder. After verifying that your data opens, remove any desktop shortcuts, taskbar pins, and Startup folder entries you created for the old copy, then archive the old program folder. If your source document lives inside the old folder, back it up and verify its new location in Settings first.
+
+If PeekTodo says it is already running, quit the existing instance from the tray, then launch from the checkout you want to use.
+
 ## Set up a source
 
 - **Existing Markdown**. Choose a file, select the root in the structure tree, choose a mode, and save.
@@ -89,14 +115,12 @@ Add weekday and time-slot aliases under `vocabulary` in `config.json`. Unrecogni
 - PeekTodo makes no network requests. For Mubu, the panel's timestamp comes from the local backup. Recent edits appear after that backup updates. If a read fails, the panel shows a warning and keeps the last successful data from the current session.
 
 <details>
-<summary>Update PeekTodo or diagnose a data source</summary>
+<summary>Check the launch path or diagnose a data source</summary>
 
-Quit PeekTodo from the tray, run `git pull` in the original checkout, and double-click the desktop icon again. If dependencies change, rerun `python -m pip install -e .` in the checkout. If you switch to a different checkout, launch from the new folder and save Settings once to point the desktop shortcut to that copy.
-
-From the checkout, run the following commands to check which copy launches or see what PeekTodo recognises in the bundled sample. Substitute your own configuration path to diagnose your source.
+From the checkout, run these commands to see which program and configuration that folder uses or to check the bundled sample. Substitute your own configuration path to diagnose your source.
 
 ```powershell
-python -m peek_todo --where
+.\start.cmd --where
 python -m peek_todo --doctor --config config.example.json
 ```
 
