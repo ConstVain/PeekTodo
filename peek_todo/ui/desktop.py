@@ -17,7 +17,7 @@ from ..sources.base import SourceError
 from ..storage.config import Config, default_panel_size
 from ..storage.paths import assets_dir, state_path
 from ..windows import autostart
-from ..windows.win32 import left_button_down, set_no_activate
+from ..windows.win32 import left_button_down
 from .panel import Panel, PanelSection
 from .settings import SettingsDialog
 from .settings_flow import save_settings
@@ -75,8 +75,6 @@ class DesktopController:
         self.panel.task_toggled.connect(self.on_toggle)
         self.panel.add_section_requested.connect(self.add_section)
         self.panel.remove_section_requested.connect(self.remove_section)
-        self.panel.show()
-        set_no_activate(self.panel, True)
 
         self.detector = EdgeDetector(
             panel_width=self.width,
@@ -110,7 +108,7 @@ class DesktopController:
         self.update_clock()
 
         if force_shown:
-            self.panel.set_shown(True)
+            self.panel.set_shown(True, animate=False)
 
         self.make_tray()
 
@@ -173,7 +171,7 @@ class DesktopController:
         self._was_down = down
         if not pressed_edge:
             return
-        if far_from_panel(self.panel.geometry(), QCursor.pos()):
+        if far_from_panel(self.panel.panel_geometry(), QCursor.pos()):
             self.panel.pin(False)
 
     def _on_height_changed(self, height: int) -> None:
@@ -183,7 +181,7 @@ class DesktopController:
     def _on_panel_resized(self, width: int, height: int) -> None:
         """用户拖拽改变了面板大小：同步命中区域并记住。"""
         self.width = width
-        rect = self.panel.geometry()
+        rect = self.panel.panel_geometry()
         self.detector.set_geometry(rect.x(), rect.y(), width, height)
         panel_cfg = self.cfg.raw.setdefault("panel", {})
         panel_cfg["width"] = width
@@ -194,7 +192,7 @@ class DesktopController:
             pass
 
     def _sync_detector(self) -> None:
-        rect = self.panel.geometry()
+        rect = self.panel.panel_geometry()
         self.detector.set_geometry(rect.x(), rect.y(), rect.width(), rect.height())
 
     # ---------- 托盘 ----------

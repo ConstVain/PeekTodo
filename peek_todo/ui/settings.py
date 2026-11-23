@@ -43,7 +43,7 @@ from .accent_menu import REMOVABLE_ROLE, AccentComboBox
 from .accent_picker import AccentPicker
 from .theme import (
     ACCENT_PRESETS, SAVED_ACCENT_PREFIX, THEMES, Theme, accent as themed_accent,
-    custom_accent, get as get_theme, panel_accent, saved_accents,
+    custom_accent, get as get_theme, panel_accent, relative_luminance, saved_accents,
 )
 from ..domain.structure import (
     MODE_DUE,
@@ -60,13 +60,11 @@ REFRESH_CHOICES = [3000, 5000, 10000, 30000, 60000]
 
 
 def _settings_style(theme: Theme, color: str) -> str:
-    rgb = QColor(color).getRgbF()[:3]
-    linear = [channel / 12.92 if channel <= 0.04045 else ((channel + 0.055) / 1.055) ** 2.4
-              for channel in rgb]
-    luminance = sum(channel * weight for channel, weight in zip(linear, (0.2126, 0.7152, 0.0722)))
+    luminance = relative_luminance(*QColor(color).getRgbF()[:3])
     foreground = "#000000" if luminance >= 0.179 else "#ffffff"
     checkmark = "check-dark.svg" if luminance >= 0.179 else "check-light.svg"
     checkmark_path = (assets_dir() / checkmark).as_posix()
+    border = theme.card_border
     return f"""
 QDialog {{ background: {theme.card_mid}; }}
 QLabel {{ color: {theme.text_soft}; }}
@@ -77,10 +75,10 @@ QLabel#ok {{ color: {theme.ok}; font-size: 12px; }}
 QLabel#warn {{ color: {theme.warn}; font-size: 12px; }}
 QLabel#source {{ color: {theme.text_soft}; font-size: 12px; }}
 QFrame#section {{
-    background: {theme.card_top}; border: 1px solid {theme.card_border}; border-radius: 10px;
+    background: {theme.card_top}; border: 1px solid {border}; border-radius: 10px;
 }}
 QPushButton {{
-    background: {theme.card_bottom}; color: {theme.text_soft}; border: 1px solid {theme.card_border};
+    background: {theme.card_bottom}; color: {theme.text_soft}; border: 1px solid {border};
     border-radius: 7px; padding: 7px 14px; font-size: 13px;
 }}
 QPushButton:hover {{ background: {theme.chip_bg}; border-color: {color}; }}
@@ -89,11 +87,11 @@ QPushButton#primary {{
     background: {color}; border-color: {color}; color: {foreground}; font-weight: 600;
 }}
 QPushButton#primary:hover {{ background: {color}; }}
-QPushButton#ghost {{ background: transparent; border-color: {theme.card_border}; }}
+QPushButton#ghost {{ background: transparent; border-color: {border}; }}
 QPushButton#ghost:hover, QPushButton#ghost:focus {{ border-color: {color}; }}
 QPushButton#resetPanelSize {{
     background: transparent; color: {theme.text_dim};
-    border-color: {theme.card_border}; border-radius: 5px;
+    border-color: {border}; border-radius: 5px;
     padding: 2px 8px; font-size: 11px;
 }}
 QPushButton#resetPanelSize:focus {{ border-color: {color}; }}
@@ -102,7 +100,7 @@ QPushButton#resetPanelSize:pressed {{
 }}
 QPushButton:focus, QComboBox:focus, QComboBox:hover {{ border-color: {color}; }}
 QTreeWidget {{
-    background: {theme.card_bottom}; color: {theme.text_soft}; border: 1px solid {theme.card_border};
+    background: {theme.card_bottom}; color: {theme.text_soft}; border: 1px solid {border};
     border-radius: 8px; outline: none; font-size: 13px; padding: 4px;
 }}
 QTreeWidget::item {{ padding: 3px 2px; }}
@@ -110,11 +108,11 @@ QTreeWidget::item:hover:!selected {{ background: {theme.chip_bg}; }}
 QTreeWidget::item:selected {{ background: {color}; color: {foreground}; border-radius: 4px; }}
 QRadioButton {{ color: {theme.text_soft}; font-size: 13px; spacing: 6px; }}
 QComboBox {{
-    background: {theme.card_bottom}; color: {theme.text_soft}; border: 1px solid {theme.card_border};
+    background: {theme.card_bottom}; color: {theme.text_soft}; border: 1px solid {border};
     border-radius: 7px; padding: 6px 10px; font-size: 13px; min-width: 110px;
 }}
 QComboBox QAbstractItemView {{
-    background: {theme.card_top}; color: {theme.text_soft}; border: 1px solid {theme.card_border};
+    background: {theme.card_top}; color: {theme.text_soft}; border: 1px solid {border};
     selection-background-color: {color}; selection-color: {foreground};
 }}
 QCheckBox {{ color: {theme.text_soft}; font-size: 13px; spacing: 8px; }}
@@ -295,7 +293,7 @@ class SettingsDialog(QDialog):
         section = Section("结构")
         self.tree = QTreeWidget()
         self.tree.setHeaderHidden(True)
-        self.tree.setMinimumHeight(220)
+        self.tree.setMinimumHeight(180)
         self.tree.itemSelectionChanged.connect(self._on_select)
         section.body.addWidget(self.tree, 1)
 
@@ -392,12 +390,17 @@ class SettingsDialog(QDialog):
         self.theme_combo.activated.connect(self._select_theme)
         row1.addWidget(self.theme_combo)
         row1.addStretch(1)
+        section.body.addLayout(row1)
+
+        startup_row = QHBoxLayout()
+        startup_row.setSpacing(18)
         self.autostart_check = QCheckBox("开机自启")
-        row1.addWidget(self.autostart_check)
+        startup_row.addWidget(self.autostart_check)
         self.shortcut_check = QCheckBox("桌面快捷方式")
         self.shortcut_check.setToolTip("在桌面放一个带图标的入口")
-        row1.addWidget(self.shortcut_check)
-        section.body.addLayout(row1)
+        startup_row.addWidget(self.shortcut_check)
+        startup_row.addStretch(1)
+        section.body.addLayout(startup_row)
 
         return section
 
@@ -749,8 +752,7 @@ class SettingsDialog(QDialog):
         self._hidden_accents = {key for key in PRESET_NAMES if isinstance(hidden, list) and key in hidden}
         self._populate_accents(panel.get("accent", "auto"))
 
-        theme_index = self.theme_combo.findData(panel.get("theme", "cream"))
-        self.theme_combo.setCurrentIndex(max(0, theme_index))
+        self.theme_combo.setCurrentIndex(self.theme_combo.findData(get_theme(panel["theme"]).key))
 
         from ..windows import autostart, shortcut
 

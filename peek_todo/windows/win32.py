@@ -12,6 +12,7 @@ from __future__ import annotations
 import ctypes
 import sys
 import sysconfig
+from ctypes import wintypes
 from pathlib import Path
 
 
@@ -57,6 +58,43 @@ def set_no_activate(window, enabled: bool) -> None:
         win32gui.SetWindowLong(hwnd, win32con.GWL_EXSTYLE, style | win32con.WS_EX_TOOLWINDOW)
     except Exception:  # noqa: BLE001 - 拿不到样式也不能崩
         pass
+
+
+class _CompositionAttribute(ctypes.Structure):
+    _fields_ = [
+        ("attribute", ctypes.c_int),
+        ("data", ctypes.c_void_p),
+        ("size", ctypes.c_size_t),
+    ]
+
+
+def set_acrylic(window, enabled: bool) -> bool:
+    """在 Qt 的逐像素透明窗口上启用系统亚克力和系统圆角。"""
+    if sys.platform != "win32" or sys.getwindowsversion().build < 22000:
+        return False
+    try:
+        # DWMWA_SYSTEMBACKDROP_TYPE 在这种分层窗口上只会填充实色。
+        # WCA_ACCENT_POLICY 则由合成器处理模糊，并保留窗口的透明像素。
+        state = 4 if enabled else 0  # ACCENT_ENABLE_ACRYLICBLURBEHIND / ACCENT_DISABLED
+        policy = (ctypes.c_uint32 * 4)(state, 0, 0x46F2F2F2, 0)
+        data = _CompositionAttribute(19, ctypes.addressof(policy), ctypes.sizeof(policy))
+        apply = ctypes.windll.user32.SetWindowCompositionAttribute
+        apply.argtypes = [wintypes.HWND, ctypes.POINTER(_CompositionAttribute)]
+        apply.restype = wintypes.BOOL
+        set_attribute = ctypes.windll.dwmapi.DwmSetWindowAttribute
+        hwnd = wintypes.HWND(int(window.winId()))
+        if not apply(hwnd, ctypes.byref(data)):
+            return False
+        # DWMWA_WINDOW_CORNER_PREFERENCE，圆角必须覆盖亚克力本身。
+        corner = ctypes.c_int(2 if enabled else 1)  # DWMWCP_ROUND / DWMWCP_DONOTROUND
+        result = set_attribute(hwnd, 33, ctypes.byref(corner), ctypes.sizeof(corner))
+        if enabled and result != 0:
+            policy[0] = 0
+            apply(hwnd, ctypes.byref(data))
+            return False
+        return True
+    except (AttributeError, OSError):
+        return False
 
 
 def left_button_down() -> bool:

@@ -1,14 +1,14 @@
 """右边缘滑出的待办面板（PyQt5）。
 
-窗口固定在主屏右边缘、整块透明；内部 card 通过动画滑入。
-滑出后窗口接收鼠标（可点击但永不抢焦点），缩回后整窗穿透。
+窗口贴在主屏右边缘，只显示卡片滑出的部分。
+滑出后窗口可点击，缩回后隐藏窗口。
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from PyQt5.QtCore import QEasingCurve, QEvent, QPoint, QPropertyAnimation, Qt, QTimer, pyqtSignal
+from PyQt5.QtCore import QEasingCurve, QEvent, QRect, QSignalBlocker, Qt, QTimer, QVariantAnimation, pyqtSignal
 from PyQt5.QtGui import QColor, QFont, QPainter
 from PyQt5.QtWidgets import (
     QApplication,
@@ -24,7 +24,7 @@ from PyQt5.QtWidgets import (
 )
 
 from ..domain.model import Task
-from ..windows.win32 import raise_foreground, set_no_activate
+from ..windows.win32 import raise_foreground, set_acrylic, set_no_activate
 
 from ..domain.selection import View
 from ..domain.structure import MODE_LABELS
@@ -35,25 +35,46 @@ ACCENT = "#7aa2ff"  # 兜底色，实际用 theme.accent()
 TIMESTAMP_FONT = "'得意黑', 'Smiley Sans Oblique', 'Microsoft YaHei UI'"
 
 
-def card_qss(t: Theme) -> str:
+def card_qss(t: Theme, *, acrylic: bool = False) -> str:
+    top, mid, bottom = t.card_top, t.card_mid, t.card_bottom
+    direction = "x2:0, y2:1"
+    corners = "border-top-left-radius: 14px; border-bottom-left-radius: 14px;"
+    border = f"border-left: 1px solid {t.card_border};"
+    if t.card_alpha is not None:
+        opacity = (166, 130, 145) if acrylic else t.card_alpha
+        stops = []
+        for value, alpha in zip((top, mid, bottom), opacity):
+            color = QColor(value)
+            rgb = f"{color.red()}, {color.green()}, {color.blue()}"
+            stops.append(f"rgba({rgb}, {alpha})" if color.isValid() else value)
+        top, mid, bottom = stops
+        direction = "x2:0.6, y2:1"
+        corners = "border-radius: 8px;" if not acrylic else ""
+        border = """
+        border-top: 1px solid rgba(255, 255, 255, 164);
+        border-left: 1px solid rgba(255, 255, 255, 112);
+        border-bottom: 1px solid rgba(50, 50, 50, 35);
+        """
     return f"""
 #card {{
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                 stop:0 {t.card_top}, stop:0.38 {t.card_mid}, stop:1 {t.card_bottom});
-    border-top-left-radius: 14px;
-    border-bottom-left-radius: 14px;
-    border-left: 1px solid {t.card_border};
+    background: qlineargradient(x1:0, y1:0, {direction},
+                 stop:0 {top}, stop:0.38 {mid}, stop:1 {bottom});
+    {corners}
+    {border}
 }}
 """
 
 
 def current_block_qss(t: Theme, accent: str) -> str:
     """当前时段：左侧一道色条 + 深/浅一档的底色，把"现在要做"分出来。"""
+    outline = "border: 1px solid rgba(255, 255, 255, 113);" if t.card_alpha else ""
+    width, corner = (2, 12) if t.card_alpha else (3, 9)
     return f"""
 #currentBlock {{
     background: {t.current_bg};
-    border-left: 3px solid {accent};
-    border-radius: 9px;
+    {outline}
+    border-left: {width}px solid {accent};
+    border-radius: {corner}px;
 }}
 """
 
@@ -103,7 +124,7 @@ class _Grip(QWidget):
             return
         self._panel.pin(True)
         self._start = event.globalPos()
-        self._geo = self._panel.geometry()
+        self._geo = self._panel.panel_geometry()
 
     def mouseMoveEvent(self, event):
         if self._start is None:
@@ -277,12 +298,15 @@ class Panel(QWidget):
         self._last_meta = None
         self._animate_ms = animate_ms
         self._shown = False
+        self._revealed_width = 0
         self._screen_geo = screen_geometry
         self._min_h = 200
         self._max_h = height
         self._accent = ACCENT
         self._level = "ok"
         self._grips_ready = False
+        self._acrylic_available = QApplication.platformName() == "windows"
+        self._acrylic = False
 
         self.setWindowFlags(
             Qt.FramelessWindowHint
@@ -294,21 +318,22 @@ class Panel(QWidget):
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
         self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self.setFocusPolicy(Qt.NoFocus)
-        self.setGeometry(
+        self._panel_rect = QRect(
             screen_geometry.x() + screen_geometry.width() - width,
             screen_geometry.y() + (screen_geometry.height() - height) // 2,
             width,
             height,
         )
+        self.setGeometry(self._panel_rect)
 
         self._build_ui()
         app = QApplication.instance()
         if app is not None:
             app.installEventFilter(self)
-        self._anim = QPropertyAnimation(self.card, b"pos", self)
+        self._anim = QVariantAnimation(self)
         self._anim.setDuration(animate_ms)
         self._anim.setEasingCurve(QEasingCurve.OutCubic)
-        self._anim.finished.connect(self._place_grips)
+        self._anim.valueChanged.connect(self._set_revealed_width)
 
     # ---------- 尺寸 / 缩放 ----------
 
@@ -331,6 +356,7 @@ class Panel(QWidget):
         # 一开拖就交给用户，否则 render 触发的 fit_height 会跟拖拽打架
         self._manual_size = True
         if not self._dragging:
+            self._anim.stop()
             self._dragging = True
             self.drag_started.emit()
         dx = now.x() - start.x()
@@ -397,17 +423,24 @@ class Panel(QWidget):
         if theme is self.theme:
             return
         self.theme = theme
-        self.card.setStyleSheet(card_qss(theme))
+        self._sync_acrylic()
+        self.card.setStyleSheet(card_qss(theme, acrylic=self._acrylic))
         self.scroll.setStyleSheet(scroll_qss(theme))
         self._restyle()
         if self._last_view is not None:
             self.render(self._last_view, self._last_meta or {})
 
-    def _apply_geometry(self, x: int, y: int, width: int, height: int) -> None:
+    def panel_geometry(self) -> QRect:
+        """面板完整展开后的区域，供贴边和缩放逻辑使用。"""
+        return QRect(self._panel_rect)
+
+    def _apply_geometry(self, x: int, y: int, width: int, height: int, *, keep_reveal=False) -> None:
         self._width = width
         self._height = height
-        self.setGeometry(x, y, width, height)
-        self.card.setGeometry(0 if self._shown else width, 0, width, height)
+        self._panel_rect = QRect(x, y, width, height)
+        self.card.resize(width, height)
+        revealed = self._revealed_width if keep_reveal else (width if self._shown else 0)
+        self._set_revealed_width(revealed)
         self._place_grips()
 
     # ---------- 构建 ----------
@@ -416,7 +449,7 @@ class Panel(QWidget):
         self.card = QFrame(self)
         self.card.setObjectName("card")
         self.card.setStyleSheet(card_qss(self.theme))
-        self.card.setGeometry(self._width, 0, self._width, self._height)
+        self.card.setGeometry(0, 0, self._width, self._height)
 
         root = QVBoxLayout(self.card)
         root.setContentsMargins(18, 14, 14, 10)
@@ -482,16 +515,15 @@ class Panel(QWidget):
         divider = QHBoxLayout(self.divider_widget)
         divider.setContentsMargins(0, 0, 0, 8)
         divider.setSpacing(8)
-        line = QFrame()
-        line.setFixedHeight(1)
-        line.setStyleSheet(f"background: {self.theme.divider};")
+        self.divider_line = QFrame()
+        self.divider_line.setFixedHeight(1)
         self.section_label = QLabel("今天全部")
         self.section_label.setStyleSheet(
             f"color:{self.theme.text_faint}; font-size:10px; letter-spacing:1px; background:transparent;"
         )
         self.counts = QLabel("")
         self.counts.setStyleSheet(f"color:{self.theme.text_faint}; font-size:10px; background:transparent;")
-        divider.addWidget(line, 1)
+        divider.addWidget(self.divider_line, 1)
         divider.addWidget(self.section_label)
         divider.addWidget(self.counts)
         content.addWidget(self.divider_widget)
@@ -549,6 +581,7 @@ class Panel(QWidget):
             f"color:{self._accent}; font-size:{px(10)}px; letter-spacing:1px; background:transparent;"
         )
         self.counts.setStyleSheet(f"color:{self.theme.text_faint}; font-size:{px(10)}px; background:transparent;")
+        self.divider_line.setStyleSheet(f"background: {self.theme.divider};")
         self.status.setStyleSheet(
             f"color:{self.theme.text_faint}; font-size:{px(10)}px; font-weight:600;"
             f"background:transparent;"
@@ -575,15 +608,48 @@ class Panel(QWidget):
         self._animate_ms = max(40, int(ms))
         self._anim.setDuration(self._animate_ms)
 
-    def set_shown(self, shown: bool):
+    def set_shown(self, shown: bool, *, animate: bool = True) -> None:
         if shown == self._shown:
             return
         self._shown = shown
         self.setAttribute(Qt.WA_TransparentForMouseEvents, not shown)
         self._anim.stop()
-        self._anim.setStartValue(self.card.pos())
-        self._anim.setEndValue(QPoint(0 if shown else self._width, 0))
+        target = self._width if shown else 0
+        if not animate:
+            self._set_revealed_width(target)
+            return
+        with QSignalBlocker(self._anim):
+            self._anim.setStartValue(self._revealed_width)
+            self._anim.setEndValue(target)
+            self._anim.setCurrentTime(0)
         self._anim.start()
+
+    def _set_revealed_width(self, width: int) -> None:
+        self._revealed_width = width
+        bounds = self._panel_rect
+        if width == 0:
+            self.hide()
+            self.setGeometry(bounds)
+            return
+        # 让原生窗口随卡片一起变宽，模糊只覆盖实际露出的区域。
+        self.setGeometry(bounds.right() + 1 - width, bounds.y(), width, bounds.height())
+        if not self.isVisible():
+            self._sync_acrylic()
+            self.show()
+            if not self._pinned:
+                set_no_activate(self, True)
+
+    def _sync_acrylic(self) -> None:
+        if not self._acrylic_available:
+            return
+        wanted = self.theme.card_alpha is not None
+        if wanted == self._acrylic:
+            return
+        applied = set_acrylic(self, wanted)
+        self._acrylic = wanted and applied
+        if wanted and not applied:
+            self._acrylic_available = False
+        self.card.setStyleSheet(card_qss(self.theme, acrylic=self._acrylic))
 
     # ---------- 聚焦（钉住不收回） ----------
 
@@ -880,7 +946,6 @@ class Panel(QWidget):
     def fit_height(self) -> None:
         if self._manual_size:
             # 用户手动调过大小：高度由用户说了算，内容多了走滚动
-            self.card.setGeometry(0 if self._shown else self._width, 0, self._width, self._height)
             return
         content = self.content_host.layout()
         content.activate()
@@ -889,13 +954,12 @@ class Panel(QWidget):
         target = min(self._max_h, max(self._min_h, wanted))
         if target == self._height:
             return
-        self._height = target
         geo = self._screen_geo
-        self.setGeometry(
+        self._apply_geometry(
             geo.x() + geo.width() - self._width,
             geo.y() + (geo.height() - target) // 2,
             self._width,
             target,
+            keep_reveal=True,
         )
-        self.card.setGeometry(0 if self._shown else self._width, 0, self._width, target)
         self.height_changed.emit(target)

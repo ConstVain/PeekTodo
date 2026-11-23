@@ -150,12 +150,13 @@ def test_lower_row_can_check_and_uncheck_and_failure_clears(tmp_path, monkeypatc
         assert panel._level == "ok"
     finally:
         panel.close()
-def test_tray_actions_open_settings_and_refresh(tmp_path, monkeypatch):
+@pytest.mark.parametrize("theme_key", ["dark", "glass", "vscode-light"])
+def test_tray_actions_open_settings_and_refresh(tmp_path, monkeypatch, theme_key):
     from PyQt5.QtCore import QCoreApplication, QEvent
     from PyQt5.QtWidgets import QApplication, QPushButton, QSystemTrayIcon
 
     from peek_todo.ui import desktop
-    from peek_todo.ui.theme import CREAM, DARK
+    from peek_todo.ui.theme import CREAM, THEMES
     from peek_todo.windows import shortcut
 
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
@@ -183,9 +184,9 @@ def test_tray_actions_open_settings_and_refresh(tmp_path, monkeypatch):
         rendered_backgrounds.append(dialog.grab().toImage().pixelColor(4, 4).name())
         if len(opened_themes) == 1:
             dialog.refresh_combo.setCurrentIndex(dialog.refresh_combo.findData(30000))
-            dark = dialog.theme_combo.findData("dark")
-            dialog.theme_combo.setCurrentIndex(dark)
-            dialog.theme_combo.activated.emit(dark)
+            index = dialog.theme_combo.findData(theme_key)
+            dialog.theme_combo.setCurrentIndex(index)
+            dialog.theme_combo.activated.emit(index)
         if len(opened_themes) == 2:
             dialog.findChild(QPushButton, "primary").click()
         else:
@@ -203,15 +204,15 @@ def test_tray_actions_open_settings_and_refresh(tmp_path, monkeypatch):
     try:
         actions = {action.text(): action for action in controller.tray.contextMenu().actions()}
         actions["设置…"].trigger()
-        assert controller.panel.theme.key == "dark"
+        assert controller.panel.theme.key == theme_key
         saved = Config.load(cfg.path)
-        assert saved.raw["panel"] == {"theme": "dark", "width": 380}
+        assert saved.raw["panel"] == {"theme": theme_key, "width": 380}
         assert saved.behavior["refreshMs"] == 5000
         actions["设置…"].trigger()
         actions["设置…"].trigger()
-        assert opened_themes == ["cream", "dark", "dark"]
-        assert rendered_backgrounds == [CREAM.card_mid, DARK.card_mid, DARK.card_mid]
-        assert saved_themes == ["dark"]
+        assert opened_themes == ["cream", theme_key, theme_key]
+        assert rendered_backgrounds == [CREAM.card_mid, THEMES[theme_key].card_mid, THEMES[theme_key].card_mid]
+        assert saved_themes == [theme_key]
 
         doc.write_text("- B", encoding="utf-8")
         actions["立即刷新"].trigger()
@@ -223,6 +224,57 @@ def test_tray_actions_open_settings_and_refresh(tmp_path, monkeypatch):
         controller.panel.deleteLater()
         controller.tray.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+
+
+def test_glass_slide_clips_window_without_switching_backdrop(monkeypatch):
+    from PyQt5.QtWidgets import QApplication, QToolButton
+
+    from peek_todo.ui import panel
+    from peek_todo.ui.settings import SettingsDialog
+    from peek_todo.ui.theme import CREAM, GLASS
+
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    app = QApplication.instance() or QApplication([])
+    changes = []
+    monkeypatch.setattr(panel, "set_acrylic", lambda _window, enabled: changes.append(enabled) or True)
+    widget = panel.Panel(320, 320, app.primaryScreen().geometry(), manual_height=True)
+    widget._acrylic_available = True
+    dialog = SettingsDialog()
+    try:
+        assert widget.theme == GLASS
+        assert dialog.theme_combo.currentData() == "glass"
+        assert dialog.findChild(QToolButton, "glassTint") is None
+        assert not widget.isVisible()
+        assert changes == []
+        widget.set_shown(True)
+        widget._anim.setCurrentTime(widget._anim.duration() // 2)
+        assert 0 < widget.width() < widget.card.width()
+        assert widget.geometry().right() == widget.panel_geometry().right()
+        assert changes == [True]
+        style = widget.card.styleSheet()
+        widget._anim.setCurrentTime(widget._anim.duration())
+        assert widget.geometry() == widget.panel_geometry()
+        assert widget.card.styleSheet() == style
+        assert changes == [True]
+
+        widget.set_shown(False)
+        assert widget.isVisible()
+        widget._anim.setCurrentTime(widget._anim.duration() // 2)
+        midway = widget.geometry()
+        widget.set_shown(True)
+        assert widget.geometry() == midway
+        widget._anim.setCurrentTime(widget._anim.duration())
+        widget.set_shown(False)
+        widget._anim.setCurrentTime(widget._anim.duration())
+        assert not widget.isVisible()
+        assert changes == [True]
+        assert widget.card.styleSheet() == style
+
+        widget.set_theme(CREAM)
+        assert changes == [True, False]
+    finally:
+        dialog.close()
+        widget.close()
 
 
 def test_settings_preserve_custom_fields_and_resolve_relative_paths(tmp_path, monkeypatch):

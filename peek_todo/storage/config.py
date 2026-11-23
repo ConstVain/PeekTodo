@@ -20,7 +20,7 @@ DEFAULT_PERIODS = [
 
 DEFAULT_PANEL = {
     "width": 360,
-    "theme": "cream",
+    "theme": "glass",
     "heightRatio": 0.62,
     "maxHeight": 720,
     "hotZone": 3,

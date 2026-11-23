@@ -30,10 +30,10 @@ In Settings, choose a source and mode, leave **Desktop shortcut** checked, and c
 - **Mubu**. Open the document in the Mubu desktop app so it has a local backup, then select it from the Mubu document list in PeekTodo.
 
 <p align="center">
-  <img src="docs/screenshots/settings-panel-reset.png" alt="PeekTodo Settings with the Reset panel size button at the top right of Display and Behavior" width="820">
+  <img src="docs/screenshots/settings-themes.png" alt="PeekTodo Settings with Frosted Glass selected and the Reset panel size button at the top right of Display and Behavior" width="760">
 </p>
 
-Reopen Settings from the tray. Choose Cream or Dark, and let the accent follow the current mode, choose a preset, or pick a custom color and add it to the list. Use the trash icon to remove a color. **Refresh now** in the tray menu rereads the current source.
+Reopen Settings from the tray. Frosted Glass is the default theme. It uses live backdrop blur and system corner rounding on supported Windows 11 systems, with a translucent light gray rounded panel elsewhere. Cream, Dark, and VS Code Light are also available. Let the accent follow the current mode, choose a preset, or pick a custom color and add it to the list. Use the trash icon to remove a color. **Refresh now** in the tray menu rereads the current source.
 
 If connecting or switching an external monitor leaves the panel incorrectly sized, click **Reset panel size** in the upper-right corner of **Display and Behavior** in Settings. The panel immediately restores its default width and automatic height and returns to the right edge of the current primary display.
 

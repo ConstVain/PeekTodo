@@ -1,6 +1,6 @@
 """面板配色。
 
-两套：深色（默认）和米白。所有颜色都走这里，panel.py 里不再写死色值。
+深色、米白、毛玻璃（默认）和 VS Code 浅色。所有颜色都走这里。
 强调色在浅色底上要压暗一档，否则对比度不够，所以 accent() 会做一次映射。
 """
 
@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from re import fullmatch
+
+from ..storage.config import DEFAULT_PANEL
 
 
 @dataclass(frozen=True)
@@ -43,6 +45,7 @@ class Theme:
 
     # 强调色是否需要压暗
     darken_accent: bool
+    card_alpha: tuple[int, int, int] | None = None
 
 
 DARK = Theme(
@@ -93,8 +96,57 @@ CREAM = Theme(
     darken_accent=True,
 )
 
-THEMES = {DARK.key: DARK, CREAM.key: CREAM}
-DEFAULT_THEME = CREAM
+GLASS = Theme(
+    key="glass",
+    name="毛玻璃",
+    card_top="#f7f7f7",
+    card_mid="#eeeeee",
+    card_bottom="#e7e7e7",
+    card_border="#d2d2d2",
+    text="#202020",
+    text_soft="#2e2e2e",
+    text_dim="#3a3a3a",
+    text_faint="#454545",
+    text_done="#4a4a4a",
+    current_bg="rgba(255, 255, 255, 64)",
+    chip_bg="rgba(255, 255, 255, 82)",
+    divider="rgba(58, 58, 58, 43)",
+    hover=(56, 56, 56, 19),
+    scroll_handle="rgba(60, 60, 60, 100)",
+    ok="#256844",
+    warn="#80501b",
+    overdue="#a62a3a",
+    done_box="#686868",
+    darken_accent=True,
+    card_alpha=(225, 215, 222),
+)
+
+VSCODE_LIGHT = Theme(
+    key="vscode-light",
+    name="VS Code 浅色",
+    card_top="#ffffff",
+    card_mid="#ffffff",
+    card_bottom="#fafafd",
+    card_border="#e4e5e6",
+    text="#202020",
+    text_soft="#383838",
+    text_dim="#606060",
+    text_faint="#666666",
+    text_done="#767676",
+    current_bg="#f5f7fa",
+    chip_bg="#ebf1f8",
+    divider="#e4e5e6",
+    hover=(0, 105, 204, 20),
+    scroll_handle="rgba(100, 100, 100, 135)",
+    ok="#306722",
+    warn="#825b00",
+    overdue="#ad0707",
+    done_box="#767676",
+    darken_accent=True,
+)
+
+THEMES = {theme.key: theme for theme in (DARK, CREAM, GLASS, VSCODE_LIGHT)}
+DEFAULT_THEME = THEMES[DEFAULT_PANEL["theme"]]
 
 # 浅色底上把强调色压暗，并往暖里偏一点，配米白纸色。
 # 参考：MIUI/HarmonyOS 的浅色主题强调色都会降饱和，避免在低对比底上过艳。
@@ -106,6 +158,13 @@ _LIGHT_ACCENTS = {
     "#2dd4bf": "#3d6b66",  # 青绿
 }
 
+_VSCODE_LIGHT_ACCENTS = {
+    "#7aa2ff": "#0069cc",
+    "#f0b45f": "#8c5c11",
+    "#4ade80": "#237446",
+    "#a78bfa": "#6843a2",
+    "#2dd4bf": "#0a706a",
+}
 
 # 正文字体：按"现代手机厂商字体 > 思源/Noto > 系统雅黑"的顺序取第一个装了的
 BODY_FONT_CANDIDATES = (
@@ -166,13 +225,14 @@ def body_font_family() -> str:
 
 
 _OVERRIDABLE = {
-    name for name in Theme.__dataclass_fields__ if name not in ("key", "name", "darken_accent")
+    name for name in Theme.__dataclass_fields__
+    if name not in ("key", "name", "darken_accent", "card_alpha")
 }
 
 
 def get(key: str | None, overrides: dict | None = None) -> Theme:
     """取主题；overrides 是 config.json 里 panel.colors 的字段覆盖。"""
-    base = THEMES.get((key or "").strip().lower(), DEFAULT_THEME)
+    base = THEMES.get(key.strip().lower(), DEFAULT_THEME) if isinstance(key, str) else DEFAULT_THEME
     if not overrides:
         return base
     clean = {k: v for k, v in overrides.items() if k in _OVERRIDABLE and isinstance(v, (str, int, tuple, list))}
@@ -189,8 +249,15 @@ def get(key: str | None, overrides: dict | None = None) -> Theme:
 def accent(theme: Theme, color: str) -> str:
     """按主题调整强调色：浅色主题下压暗，深色主题原样。"""
     if theme.darken_accent:
-        return _LIGHT_ACCENTS.get(color.lower(), color)
+        palette = _VSCODE_LIGHT_ACCENTS if theme.key in (GLASS.key, VSCODE_LIGHT.key) else _LIGHT_ACCENTS
+        return palette.get(color.lower(), color)
     return color
+
+
+def relative_luminance(red: float, green: float, blue: float) -> float:
+    linear = [channel / 12.92 if channel <= 0.04045 else ((channel + 0.055) / 1.055) ** 2.4
+              for channel in (red, green, blue)]
+    return sum(channel * weight for channel, weight in zip(linear, (0.2126, 0.7152, 0.0722)))
 
 
 # 三种模式各自的强调色，UI 和报告都从这里取
