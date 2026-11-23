@@ -27,7 +27,11 @@ python -m pip install -e .
 
 - 如果已有 **Markdown 文件**，点「选择 Markdown 文件」，在「结构」树里选中要显示的根节点，再选模式并保存。
 - 点「新建 Markdown 文档」时，默认选中 `Example-plan_simple.md`。确认模板后，保存窗口会填好类似 `261108_目标与事项.md` 的文件名。创建后自动打开编辑器，并在设置里选中该文件。用内置计划模板时，也会选好「规划」节点和「周计划」模式。保存文件后，结构树会自动刷新。新建和选文件共用上次使用的目录。
-- 如果使用 **幕布**，先在幕布桌面端打开文档，让本机生成备份，再从 PeekTodo 的「幕布文档」列表里选择。
+- 如果使用 **幕布**，先在幕布桌面端打开文档，让本机生成备份，再从 PeekTodo 的「幕布文档」列表里选择。PeekTodo 会在事项和分组标题中显示字体颜色与记号笔高亮，两种格式可以同时显示。
+
+<p align="center">
+  <img src="docs/screenshots/mubu-rich-text.png" alt="幕布示例，显示字体颜色和黄色高亮" width="380">
+</p>
 
 <p align="center">
   <img src="docs/screenshots/settings-themes.png" alt="PeekTodo 设置窗口，选中毛玻璃配色，显示与行为区块右上角有复位滑窗大小按钮" width="760">

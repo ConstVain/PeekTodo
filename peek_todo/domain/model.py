@@ -13,6 +13,17 @@ from dataclasses import dataclass, field
 from datetime import date
 
 
+@dataclass(frozen=True)
+class ColorSpan:
+    """字体与高亮的范围，对应纯文本中的半开区间。"""
+
+    start: int
+    end: int
+    foreground: str | None = None
+    background: str | None = None
+    foreground_name: str | None = None
+
+
 @dataclass
 class Node:
     """文档里的一个节点。Markdown 的标题/列表项、幕布的子弹，都归一到这里。"""
@@ -22,6 +33,7 @@ class Node:
     children: list["Node"] = field(default_factory=list)
     # None 表示这只是个分组标题（比如「周一下午」），不是可勾选事项
     done: bool | None = None
+    colors: tuple[ColorSpan, ...] = ()
 
     def walk(self):
         yield self
@@ -47,6 +59,7 @@ class Task:
     done: bool = False
     depth: int = 0  # 0 = 顶层事项；越大字号越小
     group: str | None = None  # 所属分组标题原文，便于报告
+    colors: tuple[ColorSpan, ...] = ()
 
 
 @dataclass
@@ -56,6 +69,7 @@ class Group:
     tasks: list[Task] = field(default_factory=list)
     # 截止日模式用：这一组对应的日期
     due: date | None = None
+    colors: tuple[ColorSpan, ...] = ()
 
 
 @dataclass

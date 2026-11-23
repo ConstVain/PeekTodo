@@ -150,6 +150,79 @@ def test_lower_row_can_check_and_uncheck_and_failure_clears(tmp_path, monkeypatc
         assert panel._level == "ok"
     finally:
         panel.close()
+def test_mubu_colors_survive_refresh_and_render_without_changing_task_text(tmp_path, monkeypatch):
+    from PyQt5.QtCore import Qt
+    from PyQt5.QtGui import QTextDocument
+    from PyQt5.QtWidgets import QApplication, QLabel
+
+    from peek_todo.sources import mubu
+    from peek_todo.ui.panel import Panel
+    from peek_todo.ui.theme import DARK
+
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setattr(mubu, "DATA_ROOT", tmp_path)
+    app = QApplication.instance() or QApplication([])
+    backup = tmp_path / "backup" / "plan" / "latest.json"
+    backup.parent.mkdir(parents=True)
+    raw = [{
+        "id": "group",
+        "text": '<span class="text-color-green">周一下午</span>',
+        "children": [{
+            "id": "task",
+            "text": (
+                'A &lt;b&gt; <span class="highlight-yellow">mark <span class="text-color-blue">blue</span></span><br>'
+                '<span class="text-color-green">green</span> <span class="text-color-orange">orange</span> '
+                '<span style="color:#503160">custom</span>'
+            ),
+            "taskStatus": 0,
+        }, {
+            "id": "plain",
+            "text": '&lt;b&gt;plain&lt;/b&gt;',
+        }],
+    }]
+    backup.write_text(json.dumps({"nodes": raw}), encoding="utf-8")
+    cfg = Config(tmp_path / "config.json", {
+        "source": {"type": "mubu", "docId": "plan"},
+        "mapping": {"mode": "week"},
+    })
+    session = TaskSession(cfg, tmp_path / ".state.json")
+    now = datetime(2026, 11, 2, 15)
+    panel = Panel(360, 400, app.primaryScreen().geometry(), theme=DARK)
+    try:
+        first = session.refresh(now)
+        task = first.view.current[0]
+        assert task.text == "A <b> mark blue green orange custom"
+        mark, blue, green, orange, custom = task.colors
+        assert task.text[mark.start:mark.end] == "mark "
+        assert task.text[blue.start:blue.end] == "blue"
+        assert mark.background == blue.background == "#ffe782"
+        assert mark.foreground is None and blue.foreground
+        assert [span.foreground_name for span in (blue, green, orange, custom)] == ["blue", "green", "orange", None]
+        assert first.view.today_groups[0].colors[0].foreground
+
+        panel.present(first.view, first.meta, "#503160")
+        row_label = panel.current_box.itemAt(0).widget().findChildren(QLabel)[1]
+        rendered = QTextDocument()
+        rendered.setHtml(row_label.text())
+        assert row_label.textFormat() == Qt.RichText
+        assert rendered.toPlainText() == task.text
+        assert "#ffe782" in rendered.toHtml()
+        plain_label = panel.current_box.itemAt(1).widget().findChildren(QLabel)[1]
+        assert plain_label.textFormat() == Qt.PlainText
+        assert plain_label.text() == "<b>plain</b>"
+
+        raw[0]["children"][0]["text"] = raw[0]["children"][0]["text"].replace("text-color-blue", "text-color-red")
+        backup.write_text(json.dumps({"nodes": raw}), encoding="utf-8")
+        second = session.refresh(now)
+        assert second.view.current[0].text == task.text
+        assert second.view.current[0].colors[1].foreground != blue.foreground
+        panel.present(second.view, second.meta, "#503160")
+        updated_label = panel.current_box.itemAt(0).widget().findChildren(QLabel)[1]
+        assert updated_label.text() != row_label.text()
+    finally:
+        panel.close()
+
+
 @pytest.mark.parametrize("theme_key", ["dark", "glass", "vscode-light"])
 def test_tray_actions_open_settings_and_refresh(tmp_path, monkeypatch, theme_key):
     from PyQt5.QtCore import QCoreApplication, QEvent

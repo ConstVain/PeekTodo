@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from html import escape
 
 from PyQt5.QtCore import QEasingCurve, QEvent, QRect, QSignalBlocker, Qt, QTimer, QVariantAnimation, pyqtSignal
 from PyQt5.QtGui import QColor, QFont, QPainter
@@ -23,12 +24,14 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from ..domain.model import Task
+from ..domain.model import ColorSpan, Group, Task
 from ..windows.win32 import raise_foreground, set_acrylic, set_no_activate
 
 from ..domain.selection import View
 from ..domain.structure import MODE_LABELS
-from .theme import MODE_ACCENTS, Theme, accent as theme_accent, body_font_family, get as get_theme
+from .theme import (
+    MODE_ACCENTS, Theme, accent as theme_accent, body_font_family, get as get_theme, relative_luminance,
+)
 
 ACCENT = "#7aa2ff"  # 兜底色，实际用 theme.accent()
 # 底部时间戳用的字体（得意黑，斜体）；没装就自动回落到系统默认
@@ -104,6 +107,54 @@ def _font(size: int, strike: bool = False) -> QFont:
     font.setPixelSize(size)
     font.setStrikeOut(strike)
     return font
+
+
+def _readable_color(foreground: QColor, background: QColor) -> str:
+    if not background.isValid():
+        return foreground.name()
+
+    base = relative_luminance(*background.getRgbF()[:3]) + 0.05
+    target = 0 if base >= 0.229 else 255
+    rgb = foreground.getRgb()[:3]
+    # 保留原色或逐步调亮 / 调暗，直到小字号也能看清。
+    for step in range(10):
+        candidate = QColor(*(round((channel * (10 - step) + target * step) / 10) for channel in rgb))
+        value = relative_luminance(*candidate.getRgbF()[:3]) + 0.05
+        if max(value, base) / min(value, base) >= 4.5:
+            return candidate.name()
+    return QColor(target, target, target).name()
+
+
+def _set_colored_text(
+    label: QLabel, text: str, colors: tuple[ColorSpan, ...], color: str, theme: Theme, *, strike=False,
+) -> None:
+    if not colors:
+        label.setTextFormat(Qt.PlainText)
+        label.setText(text)
+        return
+
+    surface = QColor(theme.card_mid)
+    parts = []
+    offset = 0
+    for span in colors:
+        parts.append(escape(text[offset:span.start]))
+        foreground = QColor(span.foreground or "")
+        background = QColor(span.background or "")
+        style = ""
+        if foreground.isValid() or background.isValid():
+            if not foreground.isValid():
+                foreground = QColor(color)
+            visible_color = _readable_color(foreground, background if background.isValid() else surface)
+            style = f"color:{visible_color}"
+        if background.isValid():
+            style += f";background-color:{background.name()}"
+        fragment = escape(text[span.start:span.end])
+        parts.append(f'<span style="{style}">{fragment}</span>' if style else fragment)
+        offset = span.end
+    parts.append(escape(text[offset:]))
+    contents = "".join(parts)
+    label.setTextFormat(Qt.RichText)
+    label.setText(f"<s>{contents}</s>" if strike else contents)
 
 
 class _Grip(QWidget):
@@ -201,7 +252,7 @@ class TaskRow(QWidget):
             f"font-size: {max(9, size - 2)}px; background: transparent;"
         )
 
-        text = QLabel(task.text)
+        text = QLabel()
         text.setWordWrap(True)
         text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         text.setFont(_font(size, strike=task.done))
@@ -218,6 +269,7 @@ class TaskRow(QWidget):
         else:
             color = t.text_dim
         text.setStyleSheet(f"color: {color}; background: transparent;")
+        _set_colored_text(text, task.text, task.colors, color, t, strike=task.done)
 
         layout.addWidget(box)
         layout.addWidget(text, 1)
@@ -752,7 +804,7 @@ class Panel(QWidget):
         )
         return label
 
-    def _group_header(self, label: str, accent: str, *, first: bool):
+    def _group_header(self, group: Group, accent: str, *, first: bool):
         """分组标题：一个带底色的小色块 + 上方的细分隔线。"""
         host = QWidget()
         host.setObjectName("groupHead")
@@ -762,13 +814,15 @@ class Panel(QWidget):
         row.setContentsMargins(0, self.px(9) if not first else self.px(3), 0, self.px(5))
         row.setSpacing(self.px(6))
 
-        chip = QLabel(label)
+        chip = QLabel()
+        chip.setWordWrap(True)
         chip.setStyleSheet(
             f"color:{accent}; font-size:{self.px(11)}px; letter-spacing:0.4px;"
             f"font-family:{TIMESTAMP_FONT};"
             f"background: {self.theme.chip_bg}; border-radius:4px;"
             f"padding:{self.px(2)}px {self.px(7)}px;"
         )
+        _set_colored_text(chip, group.label, group.colors, accent, self.theme)
         row.addWidget(chip)
         row.addStretch(1)
         return host
@@ -776,13 +830,13 @@ class Panel(QWidget):
     @staticmethod
     def _view_key(view: View) -> tuple:
         def rows(tasks):
-            return tuple((task.id, task.text, task.done, task.depth) for task in tasks)
+            return tuple((task.id, task.text, task.done, task.depth, task.colors) for task in tasks)
 
         return (
             view.headline, view.now.date(), view.mode, view.open_count, view.done_count,
             view.show_bottom, view.section_label, view.unknown_label, view.overdue_ids, view.note,
             rows(view.current), rows(view.unknown),
-            tuple((group.label, rows(group.tasks)) for group in view.today_groups),
+            tuple((group.label, group.colors, rows(group.tasks)) for group in view.today_groups),
         )
 
     def present(
@@ -813,7 +867,7 @@ class Panel(QWidget):
     def _render_groups(self, layout: QVBoxLayout, view: View, accent: str) -> None:
         groups = [group for group in view.today_groups if group.tasks]
         for index, group in enumerate(groups):
-            layout.addWidget(self._group_header(group.label, accent, first=index == 0))
+            layout.addWidget(self._group_header(group, accent, first=index == 0))
             for task in group.tasks:
                 layout.addWidget(
                     self._row(task, small=True, accent=accent, overdue=task.id in view.overdue_ids)

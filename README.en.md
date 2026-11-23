@@ -27,7 +27,11 @@ In Settings, choose a source and mode, leave **Desktop shortcut** checked, and c
 
 - **Existing Markdown**. Choose a file, select the root in the structure tree, choose a mode, and save.
 - **New Markdown**. The template picker defaults to `Example-plan_simple.md`. After confirming the template, the save dialog suggests a filename such as `261108_目标与事项.md`. PeekTodo opens the new document for editing and selects it as the source. The built-in plan templates also select the plan root and weekly mode. Saving edits refreshes the structure tree automatically. Creating and choosing Markdown files share the last-used folder.
-- **Mubu**. Open the document in the Mubu desktop app so it has a local backup, then select it from the Mubu document list in PeekTodo.
+- **Mubu**. Open the document in the Mubu desktop app so it has a local backup, then select it from the Mubu document list in PeekTodo. The panel shows text colors and highlighter backgrounds in tasks and group headings, including when both appear on the same text.
+
+<p align="center">
+  <img src="docs/screenshots/mubu-rich-text.png" alt="Mubu example showing text colors and yellow highlighting" width="380">
+</p>
 
 <p align="center">
   <img src="docs/screenshots/settings-themes.png" alt="PeekTodo Settings with Frosted Glass selected and the Reset panel size button at the top right of Display and Behavior" width="760">

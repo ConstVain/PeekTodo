@@ -150,10 +150,14 @@ def _build_due_view(view: View, result: MappingResult, now: datetime) -> None:
     view.current = overdue + today_tasks
     view.unknown = undated + list(result.orphans)
     # 下方用「11月3日 · 明天」这种相对日期标题，比原始标题更好读
-    view.today_groups = [
-        Group(label=describe_date(g.due, today), when=None, due=g.due, tasks=g.tasks)
-        for g in upcoming
-    ]
+    for group in upcoming:
+        label = describe_date(group.due, today)
+        if group.colors:
+            # 保留带颜色的原文和片段位置，再补上日期提示。
+            absolute, relative = label.split(" · ", 1)
+            hint = absolute if relative in group.label else relative
+            label = group.label if hint in group.label else f"{group.label} · {hint}"
+        view.today_groups.append(replace(group, label=label))
 
     if overdue:
         view.note = f"{len(overdue)} 条逾期"

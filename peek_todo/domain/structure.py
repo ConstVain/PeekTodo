@@ -80,6 +80,7 @@ def _collect_tasks(node: Node, depth: int, group_label: str) -> list[Task]:
                 done=bool(child.done),
                 depth=depth,
                 group=group_label,
+                colors=child.colors,
             )
         )
         tasks.extend(_collect_tasks(child, depth + 1, group_label))
@@ -111,14 +112,14 @@ def map_document(tree: Node, cfg: MappingConfig, *, today: date | None = None) -
 
     if mode == MODE_MEMO:
         tasks = _collect_tasks(root, depth=0, group_label=root.text)
-        result.groups.append(Group(label=root.text, when=None, tasks=tasks))
+        result.groups.append(Group(label=root.text, when=None, tasks=tasks, colors=root.colors))
         return result
 
     for child in root.children:
         # 没有子项、自己又是可勾选条目 → 散项，不能丢
         if child.done is not None and not child.children:
             result.orphans.append(
-                Task(id=child.id, text=child.text, done=bool(child.done), depth=0, group=root.text)
+                Task(id=child.id, text=child.text, done=bool(child.done), group=root.text, colors=child.colors)
             )
             continue
 
@@ -128,10 +129,10 @@ def map_document(tree: Node, cfg: MappingConfig, *, today: date | None = None) -
 
         if mode == MODE_WEEK:
             when = parse_when(child.text, cfg.vocabulary, cfg.aliases)
-            result.groups.append(Group(label=child.text, when=when, tasks=tasks))
+            result.groups.append(Group(label=child.text, when=when, tasks=tasks, colors=child.colors))
         else:
             due = parse_date(child.text, today)
-            result.groups.append(Group(label=child.text, when=None, due=due, tasks=tasks))
+            result.groups.append(Group(label=child.text, when=None, due=due, tasks=tasks, colors=child.colors))
 
     # 周计划模式下一条时段也没认出来、却认出了日期 → 提示换成截止日模式
     if mode == MODE_WEEK and result.groups and not any(g.when for g in result.groups):
