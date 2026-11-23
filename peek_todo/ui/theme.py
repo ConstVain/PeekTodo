@@ -166,6 +166,17 @@ _VSCODE_LIGHT_ACCENTS = {
     "#2dd4bf": "#0a706a",
 }
 
+_ACCENTS_BY_THEME = {
+    GLASS.key: {
+        **_VSCODE_LIGHT_ACCENTS,
+        "#4ade80": "#355b49",  # 周计划：松绿
+        "#7aa2ff": "#345876",  # 备忘单：灰蓝
+        "#f0b45f": "#7a4a2d",  # 截止日：铜橙
+    },
+    VSCODE_LIGHT.key: _VSCODE_LIGHT_ACCENTS,
+}
+
+
 # 正文字体：按"现代手机厂商字体 > 思源/Noto > 系统雅黑"的顺序取第一个装了的
 BODY_FONT_CANDIDATES = (
     "MiSans",
@@ -249,7 +260,7 @@ def get(key: str | None, overrides: dict | None = None) -> Theme:
 def accent(theme: Theme, color: str) -> str:
     """按主题调整强调色：浅色主题下压暗，深色主题原样。"""
     if theme.darken_accent:
-        palette = _VSCODE_LIGHT_ACCENTS if theme.key in (GLASS.key, VSCODE_LIGHT.key) else _LIGHT_ACCENTS
+        palette = _ACCENTS_BY_THEME.get(theme.key, _LIGHT_ACCENTS)
         return palette.get(color.lower(), color)
     return color
 
@@ -266,6 +277,16 @@ MODE_ACCENTS = {
     "due": "#f0b45f",  # 琥珀
     "memo": "#7aa2ff",  # 蓝
 }
+
+_TEXT_ACCENT_MODES = {"green": "week", "blue": "memo", "orange": "due"}
+
+
+def text_foreground(theme: Theme, color: str, name: str | None) -> str:
+    """毛玻璃的绿、蓝、橙正文沿用相应模式的配色。"""
+    if theme.key == GLASS.key and (mode := _TEXT_ACCENT_MODES.get(name)):
+        return accent(theme, MODE_ACCENTS[mode])
+    return color
+
 
 # 用户在设置里可以覆盖成固定色（"auto" = 跟随模式）
 ACCENT_PRESETS = {

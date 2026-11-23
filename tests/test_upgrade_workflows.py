@@ -157,7 +157,7 @@ def test_mubu_colors_survive_refresh_and_render_without_changing_task_text(tmp_p
 
     from peek_todo.sources import mubu
     from peek_todo.ui.panel import Panel
-    from peek_todo.ui.theme import DARK
+    from peek_todo.ui.theme import DARK, GLASS, panel_accent
 
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setattr(mubu, "DATA_ROOT", tmp_path)
@@ -207,9 +207,22 @@ def test_mubu_colors_survive_refresh_and_render_without_changing_task_text(tmp_p
         assert row_label.textFormat() == Qt.RichText
         assert rendered.toPlainText() == task.text
         assert "#ffe782" in rendered.toHtml()
+        assert panel_accent(GLASS, {}, "memo") not in row_label.text()
         plain_label = panel.current_box.itemAt(1).widget().findChildren(QLabel)[1]
         assert plain_label.textFormat() == Qt.PlainText
         assert plain_label.text() == "<b>plain</b>"
+
+        panel.set_theme(GLASS)
+        row_label = panel.current_box.itemAt(0).widget().findChildren(QLabel)[1]
+        rendered.setHtml(row_label.text())
+        assert rendered.toPlainText() == task.text
+        shades = {mode: panel_accent(GLASS, {}, mode) for mode in ("memo", "week", "due")}
+        assert f"color:{shades['memo']};background-color:#ffe782" in row_label.text()
+        assert f'color:{shades["week"]}">green' in row_label.text()
+        assert f'color:{shades["due"]}">orange' in row_label.text()
+        assert 'color:#503160">custom' in row_label.text()
+        group_label = panel.all_box.itemAt(0).widget().findChild(QLabel)
+        assert f'color:{shades["week"]}">周一下午' in group_label.text()
 
         raw[0]["children"][0]["text"] = raw[0]["children"][0]["text"].replace("text-color-blue", "text-color-red")
         backup.write_text(json.dumps({"nodes": raw}), encoding="utf-8")

@@ -31,6 +31,7 @@ from ..domain.selection import View
 from ..domain.structure import MODE_LABELS
 from .theme import (
     MODE_ACCENTS, Theme, accent as theme_accent, body_font_family, get as get_theme, relative_luminance,
+    text_foreground,
 )
 
 ACCENT = "#7aa2ff"  # 兜底色，实际用 theme.accent()
@@ -138,7 +139,7 @@ def _set_colored_text(
     offset = 0
     for span in colors:
         parts.append(escape(text[offset:span.start]))
-        foreground = QColor(span.foreground or "")
+        foreground = QColor(text_foreground(theme, span.foreground or "", span.foreground_name))
         background = QColor(span.background or "")
         style = ""
         if foreground.isValid() or background.isValid():

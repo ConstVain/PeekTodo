@@ -30,7 +30,7 @@ In Settings, choose a source and mode, leave **Desktop shortcut** checked, and c
 - **Mubu**. Open the document in the Mubu desktop app so it has a local backup, then select it from the Mubu document list in PeekTodo. The panel shows text colors and highlighter backgrounds in tasks and group headings, including when both appear on the same text.
 
 <p align="center">
-  <img src="docs/screenshots/mubu-rich-text.png" alt="Mubu example showing text colors and yellow highlighting" width="380">
+  <img src="docs/screenshots/mubu-glass-colors.png" alt="A Mubu example on frosted glass with red, pine green, slate blue, copper orange, and yellow highlighting" width="380">
 </p>
 
 <p align="center">
@@ -38,6 +38,8 @@ In Settings, choose a source and mode, leave **Desktop shortcut** checked, and c
 </p>
 
 Reopen Settings from the tray. Frosted Glass is the default theme. It uses live backdrop blur and system corner rounding on supported Windows 11 systems, with a translucent light gray rounded panel elsewhere. Cream, Dark, and VS Code Light are also available. Let the accent follow the current mode, choose a preset, or pick a custom color and add it to the list. Use the trash icon to remove a color. **Refresh now** in the tray menu rereads the current source.
+
+With mode-based accents, Frosted Glass uses pine green for Weekly Plan, copper orange for Deadline, and slate blue for Memo. Mubu text in green, orange, and blue uses the corresponding shades and keeps its highlight background.
 
 If connecting or switching an external monitor leaves the panel incorrectly sized, click **Reset panel size** in the upper-right corner of **Display and Behavior** in Settings. The panel immediately restores its default width and automatic height and returns to the right edge of the current primary display.
 
@@ -67,9 +69,9 @@ Click `−` in the top-right corner of an added section to remove it. PeekTodo s
 <th width="33%">Memo</th>
 </tr>
 <tr>
-<td><img src="docs/screenshots/weekly-plan.png" alt="Weekly plan with the current slot above all of today's tasks"></td>
-<td><img src="docs/screenshots/deadlines.png" alt="Deadline panel with overdue items in red and upcoming deadlines below"></td>
-<td><img src="docs/screenshots/memo.png" alt="Memo panel showing all items in order"></td>
+<td><img src="docs/screenshots/glass-weekly-plan.png" alt="Frosted-glass Weekly Plan with a pine green accent and the current slot above all of today's tasks"></td>
+<td><img src="docs/screenshots/glass-deadlines.png" alt="Frosted-glass Deadline with a copper orange accent, overdue items in red, and upcoming deadlines below"></td>
+<td><img src="docs/screenshots/glass-memo.png" alt="Frosted-glass Memo with a slate blue accent, showing all items in order"></td>
 </tr>
 <tr>
 <td>Group items by time slot, such as <code>周一下午</code> (Monday afternoon). The current slot appears above the rest of today's plan.</td>
